@@ -41,7 +41,7 @@ func TestInterceptor_WithShouldNotLog(t *testing.T) {
 }
 
 func TestInterceptor_HappyCase(t *testing.T) {
-	//defer assertNotPanic(t)
+	defer assertNotPanic(t)
 
 	app := fiber.New()
 

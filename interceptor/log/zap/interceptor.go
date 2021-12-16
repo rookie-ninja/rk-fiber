@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-// Interceptor returns a gin.HandlerFunc (middleware) that logs requests using uber-go/zap.
+// Interceptor returns a fiber.Handler (middleware) that logs requests using uber-go/zap.
 func Interceptor(opts ...Option) fiber.Handler {
 	set := newOptionSet(opts...)
 
