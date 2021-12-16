@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/rookie-ninja/rk-common/common"
 	"go.uber.org/zap"
+	"net"
 	"strings"
 )
 
@@ -67,7 +68,11 @@ func GetRemoteAddressSet(ctx *fiber.Ctx) (remoteIp, remotePort string) {
 		return
 	}
 
-	remoteIp, remotePort = ctx.IP(), ctx.Port()
+	var err error
+	if remoteIp, remotePort, err = net.SplitHostPort(ctx.Context().RemoteAddr().String()); err != nil {
+		return
+	}
+
 	forwardedRemoteIp := ctx.IPs()
 
 	// Deal with forwarded remote ip

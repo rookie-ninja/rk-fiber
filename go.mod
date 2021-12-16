@@ -7,6 +7,7 @@ require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/markbates/pkger v0.17.1
 	github.com/rookie-ninja/rk-common v1.2.3
+	github.com/rookie-ninja/rk-entry v1.0.4
 	github.com/rookie-ninja/rk-logger v1.2.3
 	github.com/rookie-ninja/rk-query v1.2.4
 	github.com/stretchr/testify v1.7.0

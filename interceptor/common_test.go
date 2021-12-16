@@ -18,6 +18,7 @@ func newCtx(uri string) (*fiber.Ctx, *fasthttp.RequestCtx) {
 	reqCtx := &fasthttp.RequestCtx{
 		Request: fasthttp.Request{},
 	}
+
 	reqCtx.Request.SetRequestURI(uri)
 	ctx := app.AcquireCtx(reqCtx)
 	return ctx, reqCtx
