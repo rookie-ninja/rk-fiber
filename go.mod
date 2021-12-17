@@ -5,6 +5,7 @@ go 1.16
 require (
 	github.com/gofiber/fiber/v2 v2.23.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible
+	github.com/juju/ratelimit v1.0.1
 	github.com/markbates/pkger v0.17.1
 	github.com/prometheus/client_golang v1.10.0
 	github.com/rookie-ninja/rk-common v1.2.3
@@ -20,5 +21,6 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.3.0
 	go.opentelemetry.io/otel/sdk v1.3.0
 	go.opentelemetry.io/otel/trace v1.3.0
+	go.uber.org/ratelimit v0.2.0
 	go.uber.org/zap v1.19.1
 )
