@@ -56,7 +56,6 @@ func before(ctx *fiber.Ctx, set *optionSet) error {
 				rkerror.WithMessage("Invalid Basic Auth format"))
 			ctx.Response().SetStatusCode(http.StatusUnauthorized)
 			ctx.JSON(resp)
-			ctx.Response()
 			return resp.Err
 		}
 		if !set.Authorized(tokens[0], tokens[1]) {
