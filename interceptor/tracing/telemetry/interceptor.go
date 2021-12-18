@@ -3,7 +3,7 @@
 // Use of this source code is governed by an Apache-style
 // license that can be found in the LICENSE file.
 
-// Package rkfibertrace is aa middleware of fiber framework for recording trace info of RPC
+// Package rkfibertrace is a middleware of fiber framework for recording trace info of RPC
 package rkfibertrace
 
 import (
