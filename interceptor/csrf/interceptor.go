@@ -53,16 +53,17 @@ func Interceptor(opts ...Option) fiber.Handler {
 					rkerror.WithHttpCode(http.StatusBadRequest),
 					rkerror.WithMessage("failed to extract client token"),
 					rkerror.WithDetails(err)))
-				return fiber.ErrBadRequest
+				ctx.Context().SetStatusCode(http.StatusBadRequest)
+				return nil
 			}
 
 			// 3.3: return 403 to client if token is not matched
 			if !isValidToken(token, clientToken) {
 				ctx.JSON(rkerror.New(
 					rkerror.WithHttpCode(http.StatusForbidden),
-					rkerror.WithMessage("invalid csrf token"),
-					rkerror.WithDetails(err)))
-				return fiber.ErrForbidden
+					rkerror.WithMessage("invalid csrf token")))
+				ctx.Context().SetStatusCode(http.StatusForbidden)
+				return nil
 			}
 		}
 
@@ -96,7 +97,7 @@ func Interceptor(opts ...Option) fiber.Handler {
 		ctx.Cookie(cookie)
 
 		// store token in the context
-		ctx.Set(rkfiberinter.RpcCsrfTokenKey, token)
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcCsrfTokenKey, token))
 
 		// protect clients from caching the response
 		ctx.Response().Header.Add(headerVary, headerCookie)

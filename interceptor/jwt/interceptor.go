@@ -45,7 +45,8 @@ func Interceptor(opts ...Option) fiber.Handler {
 				rkerror.WithHttpCode(http.StatusUnauthorized),
 				rkerror.WithMessage("invalid or expired jwt"),
 				rkerror.WithDetails(err)))
-			return fiber.ErrUnauthorized
+			ctx.Context().SetStatusCode(http.StatusUnauthorized)
+			return nil
 		}
 
 		// parse token
@@ -56,7 +57,8 @@ func Interceptor(opts ...Option) fiber.Handler {
 				rkerror.WithHttpCode(http.StatusUnauthorized),
 				rkerror.WithMessage("invalid or expired jwt"),
 				rkerror.WithDetails(err)))
-			return fiber.ErrUnauthorized
+			ctx.Context().SetStatusCode(http.StatusUnauthorized)
+			return nil
 		}
 
 		// insert into context

@@ -27,7 +27,6 @@ func TestInterceptor(t *testing.T) {
 		return true
 	})))
 	app.Get("/ut-path", userHandler)
-
 	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
 	resp, err := app.Test(req)
 	assert.Nil(t, err)

@@ -31,7 +31,8 @@ func Interceptor(opts ...Option) fiber.Handler {
 			ctx.JSON(rkerror.New(
 				rkerror.WithHttpCode(http.StatusTooManyRequests),
 				rkerror.WithDetails(err)))
-			return fiber.ErrTooManyRequests
+			ctx.Context().SetStatusCode(http.StatusTooManyRequests)
+			return nil
 		}
 
 		return ctx.Next()
