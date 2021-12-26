@@ -336,7 +336,7 @@ func TestNewFiberEntry_WithDefaultValue(t *testing.T) {
 	assert.NotNil(t, entry.ZapLoggerEntry)
 	assert.NotNil(t, entry.EventLoggerEntry)
 	assert.Len(t, entry.Interceptors, 1)
-	assert.Nil(t, entry.App)
+	assert.NotNil(t, entry.App)
 	assert.Nil(t, entry.SwEntry)
 	assert.Nil(t, entry.CertEntry)
 	assert.False(t, entry.IsSwEnabled())
@@ -386,7 +386,7 @@ func TestFiberEntry_IsTlsEnabled_ExpectFalse(t *testing.T) {
 
 func TestFiberEntry_GetFiber_HappyCase(t *testing.T) {
 	entry := RegisterFiberEntry()
-	assert.Nil(t, entry.App)
+	assert.NotNil(t, entry.App)
 }
 
 func TestFiberEntry_Bootstrap_WithSwagger(t *testing.T) {
