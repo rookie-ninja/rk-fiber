@@ -793,20 +793,6 @@ func RegisterFiberEntry(opts ...FiberEntryOption) *FiberEntry {
 		entry.EntryName = "FiberServer-" + strconv.FormatUint(entry.Port, 10)
 	}
 
-	if entry.App == nil {
-		if entry.FiberConfig != nil {
-			entry.FiberConfig.DisableStartupMessage = true
-		} else {
-			entry.FiberConfig = &fiber.Config{
-				DisableStartupMessage: true,
-				ReadTimeout:           5 * time.Second,
-				IdleTimeout:           5 * time.Second,
-			}
-		}
-
-		entry.App = fiber.New(*entry.FiberConfig)
-	}
-
 	rkentry.GlobalAppCtx.AddEntry(entry)
 
 	return entry
@@ -823,6 +809,20 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 
 	ctx = context.WithValue(context.Background(), bootstrapEventIdKey, event.GetEventId())
 	logger := entry.ZapLoggerEntry.GetLogger().With(zap.String("eventId", event.GetEventId()))
+
+	if entry.App == nil {
+		if entry.FiberConfig != nil {
+			entry.FiberConfig.DisableStartupMessage = true
+		} else {
+			entry.FiberConfig = &fiber.Config{
+				DisableStartupMessage: true,
+				ReadTimeout:           5 * time.Second,
+				IdleTimeout:           5 * time.Second,
+			}
+		}
+
+		entry.App = fiber.New(*entry.FiberConfig)
+	}
 
 	// Default interceptor should be at front
 	for _, v := range entry.Interceptors {
