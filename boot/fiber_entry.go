@@ -52,10 +52,6 @@ const (
 	FiberEntryDescription = "Internal RK entry which helps to bootstrap with fiber framework."
 )
 
-var bootstrapEventIdKey = eventIdKey{}
-
-type eventIdKey struct{}
-
 // This must be declared in order to register registration function into rk context
 // otherwise, rk-boot won't able to bootstrap fiber entry automatically from boot config file
 func init() {
@@ -229,19 +225,19 @@ type BootConfigFiber struct {
 type FiberEntry struct {
 	EntryName          string                    `json:"entryName" yaml:"entryName"`
 	EntryType          string                    `json:"entryType" yaml:"entryType"`
-	EntryDescription   string                    `json:"entryDescription" yaml:"entryDescription"`
-	ZapLoggerEntry     *rkentry.ZapLoggerEntry   `json:"zapLoggerEntry" yaml:"zapLoggerEntry"`
-	EventLoggerEntry   *rkentry.EventLoggerEntry `json:"eventLoggerEntry" yaml:"eventLoggerEntry"`
+	EntryDescription   string                    `json:"-" yaml:"-"`
+	ZapLoggerEntry     *rkentry.ZapLoggerEntry   `json:"-" yaml:"-"`
+	EventLoggerEntry   *rkentry.EventLoggerEntry `json:"-" yaml:"-"`
 	Port               uint64                    `json:"port" yaml:"port"`
-	CertEntry          *rkentry.CertEntry        `json:"certEntry" yaml:"certEntry"`
-	SwEntry            *SwEntry                  `json:"swEntry" yaml:"swEntry"`
-	CommonServiceEntry *CommonServiceEntry       `json:"commonServiceEntry" yaml:"commonServiceEntry"`
+	CertEntry          *rkentry.CertEntry        `json:"-" yaml:"-"`
+	SwEntry            *SwEntry                  `json:"-" yaml:"-"`
+	CommonServiceEntry *CommonServiceEntry       `json:"-" yaml:"-"`
 	App                *fiber.App                `json:"-" yaml:"-"`
 	FiberConfig        *fiber.Config             `json:"-" yaml:"-"`
 	Interceptors       []fiber.Handler           `json:"-" yaml:"-"`
-	PromEntry          *PromEntry                `json:"promEntry" yaml:"promEntry"`
-	StaticFileEntry    *StaticFileHandlerEntry   `json:"staticFileHandlerEntry" yaml:"staticFileHandlerEntry"`
-	TvEntry            *TvEntry                  `json:"tvEntry" yaml:"tvEntry"`
+	PromEntry          *PromEntry                `json:"-" yaml:"-"`
+	StaticFileEntry    *StaticFileHandlerEntry   `json:"-" yaml:"-"`
+	TvEntry            *TvEntry                  `json:"-" yaml:"-"`
 }
 
 // FiberEntryOption Fiber entry option.
@@ -800,15 +796,7 @@ func RegisterFiberEntry(opts ...FiberEntryOption) *FiberEntry {
 
 // Bootstrap FiberEntry.
 func (entry *FiberEntry) Bootstrap(ctx context.Context) {
-	event := entry.EventLoggerEntry.GetEventHelper().Start(
-		"bootstrap",
-		rkquery.WithEntryName(entry.EntryName),
-		rkquery.WithEntryType(entry.EntryType))
-
-	entry.logBasicInfo(event)
-
-	ctx = context.WithValue(context.Background(), bootstrapEventIdKey, event.GetEventId())
-	logger := entry.ZapLoggerEntry.GetLogger().With(zap.String("eventId", event.GetEventId()))
+	event, logger := entry.logBasicInfo("Bootstrap")
 
 	if entry.App == nil {
 		if entry.FiberConfig != nil {
@@ -896,7 +884,6 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 		entry.TvEntry.Bootstrap(ctx)
 	}
 
-	logger.Info("Bootstrapping FiberEntry.", event.ListPayloads()...)
 	go func(fiberEntry *FiberEntry) {
 		if entry.App != nil {
 			// If TLS was enabled, we need to load server certificate and key and start http server with ListenAndServeTLS()
@@ -928,17 +915,7 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 
 // Interrupt FiberEntry.
 func (entry *FiberEntry) Interrupt(ctx context.Context) {
-	event := entry.EventLoggerEntry.GetEventHelper().Start(
-		"interrupt",
-		rkquery.WithEntryName(entry.EntryName),
-		rkquery.WithEntryType(entry.EntryType))
-
-	ctx = context.WithValue(context.Background(), bootstrapEventIdKey, event.GetEventId())
-	logger := entry.ZapLoggerEntry.GetLogger().With(zap.String("eventId", event.GetEventId()))
-
-	entry.logBasicInfo(event)
-
-	logger.Info("Interrupting FiberEntry.", event.ListPayloads()...)
+	event, logger := entry.logBasicInfo("Interrupt")
 
 	if entry.IsSwEnabled() {
 		// Interrupt swagger entry
@@ -1072,15 +1049,6 @@ func (entry *FiberEntry) IsStaticFileHandlerEnabled() bool {
 	return entry.StaticFileEntry != nil
 }
 
-// Add basic fields into event.
-func (entry *FiberEntry) logBasicInfo(event rkquery.Event) {
-	event.AddPayloads(
-		zap.String("entryName", entry.EntryName),
-		zap.String("entryType", entry.EntryType),
-		zap.Uint64("port", entry.Port),
-	)
-}
-
 type Route struct {
 	Method string `yaml:"method" json:"method"`
 	Path   string `yaml:"path" json:"path"`
@@ -1119,4 +1087,62 @@ func (entry *FiberEntry) isInterceptor(r *fiber.Route) bool {
 	}
 
 	return false
+}
+
+// Add basic fields into event.
+func (entry *FiberEntry) logBasicInfo(operation string) (rkquery.Event, *zap.Logger) {
+	event := entry.EventLoggerEntry.GetEventHelper().Start(
+		operation,
+		rkquery.WithEntryName(entry.GetName()),
+		rkquery.WithEntryType(entry.GetType()))
+	logger := entry.ZapLoggerEntry.GetLogger().With(
+		zap.String("eventId", event.GetEventId()),
+		zap.String("entryName", entry.EntryName))
+
+	// add FiberEntry info
+	event.AddPayloads(
+		zap.String("entryName", entry.EntryName),
+		zap.String("entryType", entry.EntryType),
+		zap.Uint64("entryPort", entry.Port),
+	)
+
+	// add SwEntry info
+	if entry.IsSwEnabled() {
+		event.AddPayloads(
+			zap.Bool("swEnabled", true),
+			zap.String("swPath", entry.SwEntry.Path))
+	}
+
+	// add CommonServiceEntry info
+	if entry.IsCommonServiceEnabled() {
+		event.AddPayloads(
+			zap.Bool("commonServiceEnabled", true),
+			zap.String("commonServicePathPrefix", "/rk/v1/"))
+	}
+
+	// add TvEntry info
+	if entry.IsTvEnabled() {
+		event.AddPayloads(
+			zap.Bool("tvEnabled", true),
+			zap.String("tvPath", "/rk/v1/tv/"))
+	}
+
+	// add PromEntry info
+	if entry.IsPromEnabled() {
+		event.AddPayloads(
+			zap.Bool("promEnabled", true),
+			zap.Uint64("promPort", entry.PromEntry.Port),
+			zap.String("promPath", entry.PromEntry.Path))
+	}
+
+	// add StaticFileHandlerEntry info
+	if entry.IsStaticFileHandlerEnabled() {
+		event.AddPayloads(
+			zap.Bool("staticFileHandlerEnabled", true),
+			zap.String("staticFileHandlerPath", entry.StaticFileEntry.Path))
+	}
+
+	logger.Info(fmt.Sprintf("%s fiberEntry", operation))
+
+	return event, logger
 }

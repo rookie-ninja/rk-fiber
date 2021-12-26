@@ -38,7 +38,7 @@ func TestPromEntry_Bootstrap(t *testing.T) {
 
 	entry := NewPromEntry()
 
-	ctx := context.WithValue(context.Background(), bootstrapEventIdKey, "ut")
+	ctx := context.TODO()
 	entry.Bootstrap(ctx)
 }
 
@@ -47,7 +47,7 @@ func TestPromEntry_Interrupt(t *testing.T) {
 
 	entry := NewPromEntry()
 
-	ctx := context.WithValue(context.Background(), bootstrapEventIdKey, "ut")
+	ctx := context.TODO()
 	entry.Bootstrap(ctx)
 	entry.Interrupt(ctx)
 }
