@@ -1101,10 +1101,7 @@ func (entry *FiberEntry) logBasicInfo(operation string) (rkquery.Event, *zap.Log
 
 	// add FiberEntry info
 	event.AddPayloads(
-		zap.String("entryName", entry.EntryName),
-		zap.String("entryType", entry.EntryType),
-		zap.Uint64("entryPort", entry.Port),
-	)
+		zap.Uint64("fiberPort", entry.Port))
 
 	// add SwEntry info
 	if entry.IsSwEnabled() {
