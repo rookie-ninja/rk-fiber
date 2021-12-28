@@ -7,7 +7,7 @@ package rkfiberjwt
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 	"reflect"

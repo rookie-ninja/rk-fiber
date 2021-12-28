@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/rookie-ninja/rk-common/error"
 	"github.com/rookie-ninja/rk-fiber/interceptor"
 	"net/http"

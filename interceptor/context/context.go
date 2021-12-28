@@ -9,7 +9,7 @@ package rkfiberctx
 import (
 	"context"
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/rookie-ninja/rk-fiber/interceptor"
 	"github.com/rookie-ninja/rk-logger"
 	"github.com/rookie-ninja/rk-query"

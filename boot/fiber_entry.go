@@ -1142,6 +1142,12 @@ func (entry *FiberEntry) logBasicInfo(operation string) (rkquery.Event, *zap.Log
 			zap.String("staticFileHandlerPath", entry.StaticFileEntry.Path))
 	}
 
+	// add tls info
+	if entry.IsTlsEnabled() {
+		event.AddPayloads(
+			zap.Bool("tlsEnabled", true))
+	}
+
 	logger.Info(fmt.Sprintf("%s fiberEntry", operation))
 
 	return event, logger
