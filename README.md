@@ -191,6 +191,9 @@ func main() {
 		})
 	})
 
+	// This is required!!!
+	fiberEntry.RefreshFiberRoutes()
+
 	// Wait for shutdown signal
 	rkentry.GlobalAppCtx.WaitForShutdownSig()
 

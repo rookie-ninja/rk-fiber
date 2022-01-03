@@ -28,6 +28,9 @@ func main() {
 	entry.App.Get("/rk/v1/greeter", Greeter)
 	entry.App.Post("/rk/v1/greeter", Greeter)
 
+	// This is required!!!
+	entry.RefreshFiberRoutes()
+
 	// Wait for shutdown signal
 	rkentry.GlobalAppCtx.WaitForShutdownSig()
 

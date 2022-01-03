@@ -1049,6 +1049,14 @@ func (entry *FiberEntry) IsStaticFileHandlerEnabled() bool {
 	return entry.StaticFileEntry != nil
 }
 
+// RefreshFiberRoutes will rebuild fiber app tree, this is required!!!
+// Why not create fiber.App before bootstrap?
+//
+// This is because we hope to provide user specified fiber.Config which can override our custom settings.
+func (entry *FiberEntry) RefreshFiberRoutes() {
+	entry.App.Handler()
+}
+
 type Route struct {
 	Method string `yaml:"method" json:"method"`
 	Path   string `yaml:"path" json:"path"`
