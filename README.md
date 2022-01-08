@@ -55,7 +55,7 @@ This belongs to [rk-boot](https://github.com/rookie-ninja/rk-boot) family. We su
     - [Secure](#secure)
     - [CSRF](#csrf)
   - [Full YAML](#full-yaml)
-  - [Development Status: Testing](#development-status-testing)
+- [Development Status: Testing](#development-status-testing)
 - [Build instruction](#build-instruction)
 - [Test instruction](#test-instruction)
   - [Contributing](#contributing)
@@ -770,9 +770,18 @@ fiber:
 #        cookieHttpOnly: false                             # Optional, default: false
 #        cookieSameSite: "default"                         # Optional, default: "default", options: lax, strict, none, default
 #        ignorePrefix: []                                  # Optional, default: []
+#      cors:
+#        enabled: true                                     # Optional, default: false
+#        allowOrigins:
+#          - "http://localhost:*"                          # Optional, default: *
+#        allowCredentials: false                           # Optional, default: false
+#        allowHeaders: []                                  # Optional, default: []
+#        allowMethods: []                                  # Optional, default: []
+#        exposeHeaders: []                                 # Optional, default: []
+#        maxAge: 0                                         # Optional, default: 0
 ```
 
-### Development Status: Testing
+## Development Status: Testing
 
 ## Build instruction
 Simply run make all to validate your changes. Or run codes in example/ folder.
