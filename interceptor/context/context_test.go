@@ -9,7 +9,7 @@ import (
 	"context"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/rookie-ninja/rk-fiber/interceptor"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
 	"github.com/rookie-ninja/rk-logger"
 	"github.com/rookie-ninja/rk-query"
 	"github.com/stretchr/testify/assert"
@@ -82,7 +82,7 @@ func TestGetEvent(t *testing.T) {
 
 	// Happy case
 	event := rkquery.NewEventFactory().CreateEventNoop()
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcEventKey, event))
+	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EventKey, event))
 	assert.Equal(t, event, GetEvent(ctx))
 }
 
@@ -97,10 +97,10 @@ func TestGetLogger(t *testing.T) {
 
 	// Happy case
 	// Add request id and trace id
-	ctx.Response().Header.Set(RequestIdKey, "ut-request-id")
-	ctx.Response().Header.Set(TraceIdKey, "ut-trace-id")
+	ctx.Response().Header.Set(rkmid.HeaderRequestId, "ut-request-id")
+	ctx.Response().Header.Set(rkmid.HeaderTraceId, "ut-trace-id")
 
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcLoggerKey, rklogger.NoopLogger))
+	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.LoggerKey, rklogger.NoopLogger))
 	assert.Equal(t, rklogger.NoopLogger, GetLogger(ctx))
 }
 
@@ -114,7 +114,7 @@ func TestGetRequestId(t *testing.T) {
 	assert.Empty(t, GetRequestId(ctx))
 
 	// Happy case
-	ctx.Response().Header.Set(RequestIdKey, "ut-request-id")
+	ctx.Response().Header.Set(rkmid.HeaderRequestId, "ut-request-id")
 	assert.Equal(t, "ut-request-id", GetRequestId(ctx))
 }
 
@@ -128,7 +128,7 @@ func TestGetTraceId(t *testing.T) {
 	assert.Empty(t, GetTraceId(ctx))
 
 	// Happy case
-	ctx.Response().Header.Set(TraceIdKey, "ut-trace-id")
+	ctx.Response().Header.Set(rkmid.HeaderTraceId, "ut-trace-id")
 	assert.Equal(t, "ut-trace-id", GetTraceId(ctx))
 }
 
@@ -142,7 +142,7 @@ func TestGetEntryName(t *testing.T) {
 	assert.Empty(t, GetEntryName(ctx))
 
 	// Happy case
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcEntryNameKey, "ut-entry-name"))
+	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, "ut-entry-name"))
 	assert.Equal(t, "ut-entry-name", GetEntryName(ctx))
 }
 
@@ -157,7 +157,7 @@ func TestGetTraceSpan(t *testing.T) {
 
 	// Happy case
 	_, span := noopTracerProvider.Tracer("ut-trace").Start(ctx.Context(), "noop-span")
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcSpanKey, span))
+	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.SpanKey, span))
 	assert.Equal(t, span, GetTraceSpan(ctx))
 }
 
@@ -172,7 +172,7 @@ func TestGetTracer(t *testing.T) {
 
 	// Happy case
 	tracer := noopTracerProvider.Tracer("ut-trace")
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcTracerKey, tracer))
+	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.TracerKey, tracer))
 	assert.Equal(t, tracer, GetTracer(ctx))
 }
 
@@ -187,7 +187,7 @@ func TestGetTracerProvider(t *testing.T) {
 
 	// Happy case
 	provider := trace.NewNoopTracerProvider()
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcTracerProviderKey, provider))
+	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.TracerProviderKey, provider))
 	assert.Equal(t, provider, GetTracerProvider(ctx))
 }
 
@@ -202,7 +202,7 @@ func TestGetTracerPropagator(t *testing.T) {
 
 	// Happy case
 	prop := propagation.NewCompositeTextMapPropagator()
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcPropagatorKey, prop))
+	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.PropagatorKey, prop))
 	assert.Equal(t, prop, GetTracerPropagator(ctx))
 }
 
@@ -216,7 +216,7 @@ func TestInjectSpanToHttpRequest(t *testing.T) {
 	ctx, _ := newCtx()
 
 	prop := propagation.NewCompositeTextMapPropagator()
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcPropagatorKey, prop))
+	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.PropagatorKey, prop))
 
 	InjectSpanToHttpRequest(ctx, &http.Request{
 		Header: http.Header{},
@@ -253,7 +253,7 @@ func TestGetJwtToken(t *testing.T) {
 	assert.Nil(t, GetJwtToken(ctx))
 
 	// happy case
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcJwtTokenKey, &jwt.Token{}))
+	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.JwtTokenKey, &jwt.Token{}))
 	assert.NotNil(t, GetJwtToken(ctx))
 }
 
@@ -267,7 +267,7 @@ func TestGetCsrfToken(t *testing.T) {
 	assert.Empty(t, GetCsrfToken(ctx))
 
 	// happy case
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcCsrfTokenKey, "csrf-token"))
+	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.CsrfTokenKey, "csrf-token"))
 	assert.NotEmpty(t, GetCsrfToken(ctx))
 }
 

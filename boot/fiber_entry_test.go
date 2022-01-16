@@ -7,17 +7,27 @@ package rkfiber
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rookie-ninja/rk-entry/entry"
-	"github.com/rookie-ninja/rk-fiber/interceptor/log/zap"
-	"github.com/rookie-ninja/rk-fiber/interceptor/metrics/prom"
+	"github.com/prometheus/client_golang/prometheus"
+	rkentry "github.com/rookie-ninja/rk-entry/entry"
+	rkmidmetrics "github.com/rookie-ninja/rk-entry/middleware/metrics"
+	rkfibermeta "github.com/rookie-ninja/rk-fiber/interceptor/meta"
+	rkfibermetrics "github.com/rookie-ninja/rk-fiber/interceptor/metrics/prom"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
+	"math/big"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -27,7 +37,7 @@ const (
 ---
 fiber:
  - name: greeter
-   port: 8080
+   port: 1949
    enabled: true
    sw:
      enabled: true
@@ -65,6 +75,8 @@ fiber:
        enabled: true
      csrf:
        enabled: true
+     gzip:
+       enabled: true
  - name: greeter2
    port: 2008
    enabled: true
@@ -84,172 +96,116 @@ fiber:
        enabled: true
        basic:
          - "user:pass"
+ - name: greeter3
+   port: 2022
+   enabled: false
 `
 )
 
-func TestWithZapLoggerEntryFiber_HappyCase(t *testing.T) {
-	loggerEntry := rkentry.NoopZapLoggerEntry()
+func TestGetFiberEntry(t *testing.T) {
+	// expect nil
+	assert.Nil(t, GetFiberEntry("entry-name"))
+
+	// happy case
+	echoEntry := RegisterFiberEntry(WithName("ut"))
+	assert.Equal(t, echoEntry, GetFiberEntry("ut"))
+
+	rkentry.GlobalAppCtx.RemoveEntry("ut")
+}
+
+func TestRegisterFiberEntry(t *testing.T) {
+	// without options
 	entry := RegisterFiberEntry()
+	assert.NotNil(t, entry)
+	assert.NotEmpty(t, entry.GetName())
+	assert.NotEmpty(t, entry.GetType())
+	assert.NotEmpty(t, entry.GetDescription())
+	assert.NotEmpty(t, entry.String())
+	rkentry.GlobalAppCtx.RemoveEntry(entry.GetName())
 
-	option := WithZapLoggerEntryFiber(loggerEntry)
-	option(entry)
+	// with options
+	entry = RegisterFiberEntry(
+		WithZapLoggerEntry(nil),
+		WithEventLoggerEntry(nil),
+		WithCommonServiceEntry(rkentry.RegisterCommonServiceEntry()),
+		WithTvEntry(rkentry.RegisterTvEntry()),
+		WithStaticFileHandlerEntry(rkentry.RegisterStaticFileHandlerEntry()),
+		WithCertEntry(rkentry.RegisterCertEntry()),
+		WithSwEntry(rkentry.RegisterSwEntry()),
+		WithPort(8080),
+		WithName("ut-entry"),
+		WithDescription("ut-desc"),
+		WithPromEntry(rkentry.RegisterPromEntry()))
 
-	assert.Equal(t, loggerEntry, entry.ZapLoggerEntry)
+	assert.NotEmpty(t, entry.GetName())
+	assert.NotEmpty(t, entry.GetType())
+	assert.NotEmpty(t, entry.GetDescription())
+	assert.NotEmpty(t, entry.String())
+	assert.True(t, entry.IsSwEnabled())
+	assert.True(t, entry.IsStaticFileHandlerEnabled())
+	assert.True(t, entry.IsPromEnabled())
+	assert.True(t, entry.IsCommonServiceEnabled())
+	assert.True(t, entry.IsTvEnabled())
+	assert.True(t, entry.IsTlsEnabled())
+
+	bytes, err := entry.MarshalJSON()
+	assert.NotEmpty(t, bytes)
+	assert.Nil(t, err)
+	assert.Nil(t, entry.UnmarshalJSON([]byte{}))
 }
 
-func TestWithEventLoggerEntryFiber_HappyCase(t *testing.T) {
+func TestFiberEntry_AddInterceptor(t *testing.T) {
+	defer assertNotPanic(t)
 	entry := RegisterFiberEntry()
-
-	eventLoggerEntry := rkentry.NoopEventLoggerEntry()
-
-	option := WithEventLoggerEntryFiber(eventLoggerEntry)
-	option(entry)
-
-	assert.Equal(t, eventLoggerEntry, entry.EventLoggerEntry)
+	inter := rkfibermeta.Interceptor()
+	entry.AddInterceptor(inter)
 }
 
-func TestWithInterceptorsFiber_WithNilInterceptorList(t *testing.T) {
-	entry := RegisterFiberEntry()
+func TestFiberEntry_Bootstrap(t *testing.T) {
+	defer assertNotPanic(t)
 
-	option := WithInterceptorsFiber(nil)
-	option(entry)
+	// without enable sw, static, prom, common, tv, tls
+	entry := RegisterFiberEntry(WithPort(8080))
+	entry.Bootstrap(context.TODO())
+	validateServerIsUp(t, 8080, entry.IsTlsEnabled())
+	assert.Empty(t, entry.ListRoutes())
 
-	assert.NotNil(t, entry.Interceptors)
+	entry.Interrupt(context.TODO())
+	time.Sleep(time.Second)
+
+	// with enable sw, static, prom, common, tv, tls
+	certEntry := rkentry.RegisterCertEntry()
+	certEntry.Store.ServerCert, certEntry.Store.ServerKey = generateCerts()
+
+	entry = RegisterFiberEntry(
+		WithPort(8081),
+		WithCommonServiceEntry(rkentry.RegisterCommonServiceEntry()),
+		WithTvEntry(rkentry.RegisterTvEntry()),
+		WithStaticFileHandlerEntry(rkentry.RegisterStaticFileHandlerEntry()),
+		WithCertEntry(certEntry),
+		WithSwEntry(rkentry.RegisterSwEntry()),
+		WithPromEntry(rkentry.RegisterPromEntry()))
+	entry.Bootstrap(context.TODO())
+	validateServerIsUp(t, 8081, entry.IsTlsEnabled())
+	assert.NotEmpty(t, entry.ListRoutes())
+
+	entry.Interrupt(context.TODO())
+	time.Sleep(time.Second)
 }
 
-func TestWithInterceptorsFiber_HappyCase(t *testing.T) {
-	entry := RegisterFiberEntry()
+func TestFiberEntry_startServer_ServerFail(t *testing.T) {
+	// let's give an invalid port
+	entry := RegisterFiberEntry(
+		WithPort(808080))
 
-	loggingInterceptor := rkfiberlog.Interceptor()
-	metricsInterceptor := rkfibermetrics.Interceptor()
+	event := rkentry.NoopEventLoggerEntry().GetEventFactory().CreateEventNoop()
+	logger := rkentry.NoopZapLoggerEntry().GetLogger()
 
-	interceptors := []fiber.Handler{
-		loggingInterceptor,
-		metricsInterceptor,
-	}
-
-	option := WithInterceptorsFiber(interceptors...)
-	option(entry)
-
-	assert.NotNil(t, entry.Interceptors)
-	// should contains logging, metrics and panic interceptor
-	// where panic interceptor is inject by default
-	assert.Len(t, entry.Interceptors, 3)
+	entry.startServer(event, logger)
 }
 
-func TestWithCommonServiceEntryFiber_WithEntry(t *testing.T) {
-	entry := RegisterFiberEntry()
-
-	option := WithCommonServiceEntryFiber(NewCommonServiceEntry())
-	option(entry)
-
-	assert.NotNil(t, entry.CommonServiceEntry)
-}
-
-func TestWithCommonServiceEntryFiber_WithoutEntry(t *testing.T) {
-	entry := RegisterFiberEntry()
-
-	assert.Nil(t, entry.CommonServiceEntry)
-}
-
-func TestWithTVEntryFiber_WithEntry(t *testing.T) {
-	entry := RegisterFiberEntry()
-
-	option := WithTVEntryFiber(NewTvEntry())
-	option(entry)
-
-	assert.NotNil(t, entry.TvEntry)
-}
-
-func TestWithTVEntry_WithoutEntry(t *testing.T) {
-	entry := RegisterFiberEntry()
-
-	assert.Nil(t, entry.TvEntry)
-}
-
-func TestWithCertEntryFiber_HappyCase(t *testing.T) {
-	entry := RegisterFiberEntry()
-	certEntry := &rkentry.CertEntry{}
-
-	option := WithCertEntryFiber(certEntry)
-	option(entry)
-
-	assert.Equal(t, entry.CertEntry, certEntry)
-}
-
-func TestWithSWEntryFiber_HappyCase(t *testing.T) {
-	entry := RegisterFiberEntry()
-	sw := NewSwEntry()
-
-	option := WithSwEntryFiber(sw)
-	option(entry)
-
-	assert.Equal(t, entry.SwEntry, sw)
-}
-
-func TestWithPortFiber_HappyCase(t *testing.T) {
-	entry := RegisterFiberEntry()
-	port := uint64(1111)
-
-	option := WithPortFiber(port)
-	option(entry)
-
-	assert.Equal(t, entry.Port, port)
-}
-
-func TestWithNameFiber_HappyCase(t *testing.T) {
-	entry := RegisterFiberEntry()
-	name := "unit-test-entry"
-
-	option := WithNameFiber(name)
-	option(entry)
-
-	assert.Equal(t, entry.EntryName, name)
-}
-
-func TestRegisterFiberEntriesWithConfig_WithInvalidConfigFilePath(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			// expect panic to be called with non nil error
-			assert.True(t, true)
-		} else {
-			// this should never be called in case of a bug
-			assert.True(t, false)
-		}
-	}()
-
-	RegisterFiberEntriesWithConfig("/invalid-path")
-}
-
-func TestRegisterFiberEntriesWithConfig_WithNilFactory(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			// expect panic to be called with non nil error
-			assert.True(t, false)
-		} else {
-			// this should never be called in case of a bug
-			assert.True(t, true)
-		}
-	}()
-
-	// write config file in unit test temp directory
-	tempDir := path.Join(t.TempDir(), "boot.yaml")
-	assert.Nil(t, ioutil.WriteFile(tempDir, []byte(defaultBootConfigStr), os.ModePerm))
-	entries := RegisterFiberEntriesWithConfig(tempDir)
-	assert.NotNil(t, entries)
-	assert.Len(t, entries, 2)
-}
-
-func TestRegisterFiberEntriesWithConfig_HappyCase(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			// expect panic to be called with non nil error
-			assert.True(t, false)
-		} else {
-			// this should never be called in case of a bug
-			assert.True(t, true)
-		}
-	}()
+func TestRegisterFiberEntriesWithConfig(t *testing.T) {
+	assertNotPanic(t)
 
 	// write config file in unit test temp directory
 	tempDir := path.Join(t.TempDir(), "boot.yaml")
@@ -261,224 +217,151 @@ func TestRegisterFiberEntriesWithConfig_HappyCase(t *testing.T) {
 	// validate entry element based on boot.yaml config defined in defaultBootConfigStr
 	greeter := entries["greeter"].(*FiberEntry)
 	assert.NotNil(t, greeter)
-	assert.Equal(t, uint64(8080), greeter.Port)
-	assert.NotNil(t, greeter.SwEntry)
-	assert.NotNil(t, greeter.CommonServiceEntry)
-	assert.NotNil(t, greeter.TvEntry)
-	// logging, metrics, auth and panic interceptor should be included
-	assert.True(t, len(greeter.Interceptors) > 0)
 
 	greeter2 := entries["greeter2"].(*FiberEntry)
 	assert.NotNil(t, greeter2)
-	assert.Equal(t, uint64(2008), greeter2.Port)
-	assert.NotNil(t, greeter2.SwEntry)
-	assert.NotNil(t, greeter2.CommonServiceEntry)
-	assert.NotNil(t, greeter2.TvEntry)
-	// logging, metrics, auth and panic interceptor should be included
-	assert.Len(t, greeter2.Interceptors, 4)
+
+	greeter3 := entries["greeter3"]
+	assert.Nil(t, greeter3)
 }
 
-func TestRegisterFiberEntry_WithZapLoggerEntry(t *testing.T) {
-	loggerEntry := rkentry.NoopZapLoggerEntry()
-	entry := RegisterFiberEntry(WithZapLoggerEntryFiber(loggerEntry))
-	assert.Equal(t, loggerEntry, entry.ZapLoggerEntry)
-}
-
-func TestRegisterFiberEntry_WithEventLoggerEntry(t *testing.T) {
-	loggerEntry := rkentry.NoopEventLoggerEntry()
-
-	entry := RegisterFiberEntry(WithEventLoggerEntryFiber(loggerEntry))
-	assert.Equal(t, loggerEntry, entry.EventLoggerEntry)
-}
-
-func TestNewFiberEntry_WithInterceptors(t *testing.T) {
-	loggingInterceptor := rkfiberlog.Interceptor()
-	entry := RegisterFiberEntry(WithInterceptorsFiber(loggingInterceptor))
-	assert.Len(t, entry.Interceptors, 2)
-}
-
-func TestNewFiberEntry_WithCommonServiceEntry(t *testing.T) {
-	entry := RegisterFiberEntry(WithCommonServiceEntryFiber(NewCommonServiceEntry()))
-	assert.NotNil(t, entry.CommonServiceEntry)
-}
-
-func TestNewFiberEntry_WithTVEntry(t *testing.T) {
-	entry := RegisterFiberEntry(WithTVEntryFiber(NewTvEntry()))
-	assert.NotNil(t, entry.TvEntry)
-}
-
-func TestNewFiberEntry_WithCertStore(t *testing.T) {
-	certEntry := &rkentry.CertEntry{}
-
-	entry := RegisterFiberEntry(WithCertEntryFiber(certEntry))
-	assert.Equal(t, certEntry, entry.CertEntry)
-}
-
-func TestNewFiberEntry_WithSWEntry(t *testing.T) {
-	sw := NewSwEntry()
-	entry := RegisterFiberEntry(WithSwEntryFiber(sw))
-	assert.Equal(t, sw, entry.SwEntry)
-}
-
-func TestNewFiberEntry_WithPort(t *testing.T) {
-	entry := RegisterFiberEntry(WithPortFiber(8080))
-	assert.Equal(t, uint64(8080), entry.Port)
-}
-
-func TestNewFiberEntry_WithName(t *testing.T) {
-	entry := RegisterFiberEntry(WithNameFiber("unit-test-greeter"))
-	assert.Equal(t, "unit-test-greeter", entry.GetName())
-}
-
-func TestNewFiberEntry_WithDefaultValue(t *testing.T) {
+func TestFiberEntry_Apis(t *testing.T) {
 	entry := RegisterFiberEntry()
-	assert.True(t, strings.HasPrefix(entry.GetName(), "FiberServer-"))
-	assert.NotNil(t, entry.ZapLoggerEntry)
-	assert.NotNil(t, entry.EventLoggerEntry)
-	assert.Len(t, entry.Interceptors, 1)
-	assert.Nil(t, entry.App)
-	assert.Nil(t, entry.SwEntry)
-	assert.Nil(t, entry.CertEntry)
-	assert.False(t, entry.IsSwEnabled())
-	assert.False(t, entry.IsTlsEnabled())
-	assert.Nil(t, entry.CommonServiceEntry)
-	assert.Nil(t, entry.TvEntry)
-	assert.Equal(t, "FiberEntry", entry.GetType())
-}
 
-func TestFiberEntry_GetName_HappyCase(t *testing.T) {
-	entry := RegisterFiberEntry(WithNameFiber("unit-test-entry"))
-	assert.Equal(t, "unit-test-entry", entry.GetName())
-}
+	app := fiber.New()
+	app.Get("/apis", entry.Apis)
+	entry.App = app
 
-func TestFiberEntry_GetType_HappyCase(t *testing.T) {
-	assert.Equal(t, "FiberEntry", RegisterFiberEntry().GetType())
-}
-
-func TestFiberEntry_String_HappyCase(t *testing.T) {
-	assert.NotEmpty(t, RegisterFiberEntry().String())
-}
-
-func TestFiberEntry_IsSwEnabled_ExpectTrue(t *testing.T) {
-	sw := NewSwEntry()
-	entry := RegisterFiberEntry(WithSwEntryFiber(sw))
-	assert.True(t, entry.IsSwEnabled())
-}
-
-func TestFiberEntry_IsSwEnabled_ExpectFalse(t *testing.T) {
-	entry := RegisterFiberEntry()
-	assert.False(t, entry.IsSwEnabled())
-}
-
-func TestFiberEntry_IsTlsEnabled_ExpectTrue(t *testing.T) {
-	certEntry := &rkentry.CertEntry{
-		Store: &rkentry.CertStore{},
-	}
-
-	entry := RegisterFiberEntry(WithCertEntryFiber(certEntry))
-	assert.True(t, entry.IsTlsEnabled())
-}
-
-func TestFiberEntry_IsTlsEnabled_ExpectFalse(t *testing.T) {
-	entry := RegisterFiberEntry()
-	assert.False(t, entry.IsTlsEnabled())
-}
-
-func TestFiberEntry_GetFiber_HappyCase(t *testing.T) {
-	entry := RegisterFiberEntry()
-	assert.Nil(t, entry.App)
-}
-
-func TestFiberEntry_Bootstrap_WithSwagger(t *testing.T) {
-	sw := NewSwEntry(
-		WithPathSw("sw"),
-		WithZapLoggerEntrySw(rkentry.NoopZapLoggerEntry()),
-		WithEventLoggerEntrySw(rkentry.NoopEventLoggerEntry()))
-	entry := RegisterFiberEntry(
-		WithNameFiber("unit-test-entry"),
-		WithPortFiber(8080),
-		WithZapLoggerEntryFiber(rkentry.NoopZapLoggerEntry()),
-		WithEventLoggerEntryFiber(rkentry.NoopEventLoggerEntry()),
-		WithSwEntryFiber(sw))
-
-	go entry.Bootstrap(context.Background())
-	time.Sleep(time.Second)
-	// endpoint should be accessible with 8080 port
-	validateServerIsUp(t, entry.Port)
-	assert.True(t, len(entry.ListRoutes()) >= 3)
-
-	entry.Interrupt(context.Background())
-	time.Sleep(time.Second)
-}
-
-func TestFiberEntry_Bootstrap_WithoutSwagger(t *testing.T) {
-	entry := RegisterFiberEntry(
-		WithNameFiber("unit-test-entry"),
-		WithPortFiber(8080),
-		WithZapLoggerEntryFiber(rkentry.NoopZapLoggerEntry()),
-		WithEventLoggerEntryFiber(rkentry.NoopEventLoggerEntry()))
-
-	go entry.Bootstrap(context.Background())
-	time.Sleep(time.Second)
-	// endpoint should be accessible with 8080 port
-	validateServerIsUp(t, entry.Port)
-	assert.Empty(t, entry.ListRoutes())
-
-	entry.Interrupt(context.Background())
-	time.Sleep(time.Second)
-}
-
-func TestFiberEntry_Bootstrap_WithoutTLS(t *testing.T) {
-	entry := RegisterFiberEntry(
-		WithNameFiber("unit-test-entry"),
-		WithPortFiber(8080),
-		WithZapLoggerEntryFiber(rkentry.NoopZapLoggerEntry()),
-		WithEventLoggerEntryFiber(rkentry.NoopEventLoggerEntry()))
-
-	go entry.Bootstrap(context.Background())
-	time.Sleep(time.Second)
-	// endpoint should be accessible with 8080 port
-	validateServerIsUp(t, entry.Port)
-
-	entry.Interrupt(context.Background())
-	time.Sleep(time.Second)
-}
-
-func TestFiberEntry_Shutdown_WithBootstrap(t *testing.T) {
-	defer assertNotPanic(t)
-
-	entry := RegisterFiberEntry(
-		WithNameFiber("unit-test-entry"),
-		WithPortFiber(8080),
-		WithZapLoggerEntryFiber(rkentry.NoopZapLoggerEntry()),
-		WithEventLoggerEntryFiber(rkentry.NoopEventLoggerEntry()))
-
-	go entry.Bootstrap(context.Background())
-	time.Sleep(time.Second)
-	// endpoint should be accessible with 8080 port
-	validateServerIsUp(t, entry.Port)
-
-	entry.Interrupt(context.Background())
-	time.Sleep(time.Second)
-}
-
-func TestFiberEntry_Shutdown_WithoutBootstrap(t *testing.T) {
-	defer assertNotPanic(t)
-
-	entry := RegisterFiberEntry(
-		WithNameFiber("unit-test-entry"),
-		WithPortFiber(8080),
-		WithZapLoggerEntryFiber(rkentry.NoopZapLoggerEntry()),
-		WithEventLoggerEntryFiber(rkentry.NoopEventLoggerEntry()))
-
-	entry.Interrupt(context.Background())
-}
-
-func validateServerIsUp(t *testing.T, port uint64) {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort("0.0.0.0", strconv.FormatUint(port, 10)), time.Second)
+	req := httptest.NewRequest(http.MethodGet, "/apis", nil)
+	resp, err := app.Test(req)
 	assert.Nil(t, err)
-	assert.NotNil(t, conn)
-	if conn != nil {
-		assert.Nil(t, conn.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestFiberEntry_Req_HappyCase(t *testing.T) {
+	defer assertNotPanic(t)
+
+	entry := RegisterFiberEntry(
+		WithCommonServiceEntry(rkentry.RegisterCommonServiceEntry()),
+		WithPort(8082),
+		WithName("ut"))
+
+	entry.AddInterceptor(rkfibermetrics.Interceptor(
+		rkmidmetrics.WithEntryNameAndType("ut", "Fiber"),
+		rkmidmetrics.WithRegisterer(prometheus.NewRegistry())))
+
+	app := fiber.New()
+	app.Get("/req", entry.Req)
+	entry.App = app
+
+	entry.Bootstrap(context.TODO())
+
+	req := httptest.NewRequest(http.MethodGet, "/req", nil)
+	resp, err := app.Test(req)
+	assert.Nil(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	entry.Interrupt(context.TODO())
+	time.Sleep(time.Second)
+}
+
+func TestFiberEntry_TV(t *testing.T) {
+	defer assertNotPanic(t)
+
+	entry := RegisterFiberEntry(
+		WithCommonServiceEntry(rkentry.RegisterCommonServiceEntry()),
+		WithTvEntry(rkentry.RegisterTvEntry()),
+		WithPort(8083),
+		WithName("ut"))
+
+	entry.AddInterceptor(rkfibermetrics.Interceptor(
+		rkmidmetrics.WithEntryNameAndType("ut", "Echo")))
+
+	app := fiber.New()
+	app.Get("/ut/*", entry.TV)
+	entry.App = app
+
+	entry.Bootstrap(context.TODO())
+
+	req := httptest.NewRequest(http.MethodGet, "/ut/apis", nil)
+	resp, err := app.Test(req)
+	assert.Nil(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// for default
+	req = httptest.NewRequest(http.MethodGet, "/ut/other", nil)
+	resp, err = app.Test(req)
+	assert.Nil(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	entry.Interrupt(context.TODO())
+	time.Sleep(time.Second)
+}
+
+func generateCerts() ([]byte, []byte) {
+	// Create certs and return as []byte
+	ca := &x509.Certificate{
+		Subject: pkix.Name{
+			Organization: []string{"Fake cert."},
+		},
+		SerialNumber:          big.NewInt(42),
+		NotAfter:              time.Now().Add(2 * time.Hour),
+		IsCA:                  true,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
 	}
+
+	// Create a Private Key
+	key, _ := rsa.GenerateKey(rand.Reader, 4096)
+
+	// Use CA Cert to sign a CSR and create a Public Cert
+	csr := &key.PublicKey
+	cert, _ := x509.CreateCertificate(rand.Reader, ca, ca, csr, key)
+
+	// Convert keys into pem.Block
+	c := &pem.Block{Type: "CERTIFICATE", Bytes: cert}
+	k := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
+
+	return pem.EncodeToMemory(c), pem.EncodeToMemory(k)
+}
+
+func validateServerIsUp(t *testing.T, port uint64, isTls bool) {
+	// sleep for 2 seconds waiting server startup
+	time.Sleep(2 * time.Second)
+
+	if !isTls {
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort("0.0.0.0", strconv.FormatUint(port, 10)), time.Second)
+		assert.Nil(t, err)
+		assert.NotNil(t, conn)
+		if conn != nil {
+			assert.Nil(t, conn.Close())
+		}
+		return
+	}
+
+	tlsConf := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+
+	tlsConn, err := tls.Dial("tcp", net.JoinHostPort("0.0.0.0", strconv.FormatUint(port, 10)), tlsConf)
+	assert.Nil(t, err)
+	assert.NotNil(t, tlsConn)
+	if tlsConn != nil {
+		assert.Nil(t, tlsConn.Close())
+	}
+}
+
+func assertNotPanic(t *testing.T) {
+	if r := recover(); r != nil {
+		// Expect panic to be called with non nil error
+		assert.True(t, false)
+	} else {
+		// This should never be called in case of a bug
+		assert.True(t, true)
+	}
+}
+
+func TestMain(m *testing.M) {
+	os.Exit(m.Run())
 }

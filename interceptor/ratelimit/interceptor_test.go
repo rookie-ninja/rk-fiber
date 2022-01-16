@@ -8,6 +8,7 @@ package rkfiberlimit
 import (
 	"fmt"
 	"github.com/gofiber/fiber/v2"
+	rkmidlimit "github.com/rookie-ninja/rk-entry/middleware/ratelimit"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -15,8 +16,6 @@ import (
 )
 
 func TestInterceptor_WithoutOptions(t *testing.T) {
-	defer assertNotPanic(t)
-
 	app := fiber.New()
 	app.Use(Interceptor())
 	app.Get("/ut-path", func(*fiber.Ctx) error {
@@ -29,13 +28,11 @@ func TestInterceptor_WithoutOptions(t *testing.T) {
 }
 
 func TestInterceptor_WithTokenBucket(t *testing.T) {
-	defer assertNotPanic(t)
-
 	app := fiber.New()
 	app.Use(Interceptor(
-		WithAlgorithm(TokenBucket),
-		WithReqPerSec(1),
-		WithReqPerSecByPath("ut-path", 1)))
+		rkmidlimit.WithAlgorithm(rkmidlimit.TokenBucket),
+		rkmidlimit.WithReqPerSec(1),
+		rkmidlimit.WithReqPerSecByPath("ut-path", 1)))
 	app.Get("/ut-path", func(*fiber.Ctx) error {
 		return nil
 	})
@@ -46,13 +43,11 @@ func TestInterceptor_WithTokenBucket(t *testing.T) {
 }
 
 func TestInterceptor_WithLeakyBucket(t *testing.T) {
-	defer assertNotPanic(t)
-
 	app := fiber.New()
 	app.Use(Interceptor(
-		WithAlgorithm(LeakyBucket),
-		WithReqPerSec(1),
-		WithReqPerSecByPath("ut-path", 1)))
+		rkmidlimit.WithAlgorithm(rkmidlimit.LeakyBucket),
+		rkmidlimit.WithReqPerSec(1),
+		rkmidlimit.WithReqPerSecByPath("ut-path", 1)))
 	app.Get("/ut-path", func(*fiber.Ctx) error {
 		return nil
 	})
@@ -63,14 +58,12 @@ func TestInterceptor_WithLeakyBucket(t *testing.T) {
 }
 
 func TestInterceptor_WithUserLimiter(t *testing.T) {
-	defer assertNotPanic(t)
-
 	app := fiber.New()
 	app.Use(Interceptor(
-		WithGlobalLimiter(func(ctx *fiber.Ctx) error {
+		rkmidlimit.WithGlobalLimiter(func() error {
 			return fmt.Errorf("ut-error")
 		}),
-		WithLimiterByPath("/ut-path", func(ctx *fiber.Ctx) error {
+		rkmidlimit.WithLimiterByPath("/ut-path", func() error {
 			return fmt.Errorf("ut-error")
 		})))
 	app.Get("/ut-path", func(*fiber.Ctx) error {

@@ -8,67 +8,32 @@ package rkfibersec
 
 import (
 	"context"
-	"fmt"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rookie-ninja/rk-fiber/interceptor"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidsec "github.com/rookie-ninja/rk-entry/middleware/secure"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"net/http"
 )
 
 // Interceptor Add security interceptors.
 //
 // Mainly copied from bellow.
 // https://github.com/labstack/echo/blob/master/middleware/secure.go
-func Interceptor(opts ...Option) fiber.Handler {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidsec.Option) fiber.Handler {
+	set := rkmidsec.NewOptionSet(opts...)
 
 	return func(ctx *fiber.Ctx) error {
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcEntryNameKey, set.EntryName))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, set.GetEntryName()))
 
-		if set.Skipper(ctx) {
-			return ctx.Next()
-		}
+		req := &http.Request{}
+		fasthttpadaptor.ConvertRequest(ctx.Context(), req, true)
 
-		req := ctx.Request()
-		res := ctx.Response()
+		// case 1: return to user if error occur
+		beforeCtx := set.BeforeCtx(req)
+		set.Before(beforeCtx)
 
-		// Add X-XSS-Protection header
-		if set.XSSProtection != "" {
-			res.Header.Set(fiber.HeaderXXSSProtection, set.XSSProtection)
-		}
-
-		// Add X-Content-Type-Options header
-		if set.ContentTypeNosniff != "" {
-			res.Header.Set(fiber.HeaderXContentTypeOptions, set.ContentTypeNosniff)
-		}
-
-		// Add X-Frame-Options header
-		if set.XFrameOptions != "" {
-			res.Header.Set(fiber.HeaderXFrameOptions, set.XFrameOptions)
-		}
-
-		// Add Strict-Transport-Security header
-		if (ctx.Context().IsTLS() || (string(req.Header.Peek(fiber.HeaderXForwardedProto)) == "https")) && set.HSTSMaxAge != 0 {
-			subdomains := ""
-			if !set.HSTSExcludeSubdomains {
-				subdomains = "; includeSubdomains"
-			}
-			if set.HSTSPreloadEnabled {
-				subdomains = fmt.Sprintf("%s; preload", subdomains)
-			}
-			res.Header.Set(fiber.HeaderStrictTransportSecurity, fmt.Sprintf("max-age=%d%s", set.HSTSMaxAge, subdomains))
-		}
-
-		// Add Content-Security-Policy-Report-Only or Content-Security-Policy header
-		if set.ContentSecurityPolicy != "" {
-			if set.CSPReportOnly {
-				res.Header.Set(fiber.HeaderContentSecurityPolicyReportOnly, set.ContentSecurityPolicy)
-			} else {
-				res.Header.Set(fiber.HeaderContentSecurityPolicy, set.ContentSecurityPolicy)
-			}
-		}
-
-		// Add Referrer-Policy header
-		if set.ReferrerPolicy != "" {
-			res.Header.Set(fiber.HeaderReferrerPolicy, set.ReferrerPolicy)
+		for k, v := range beforeCtx.Output.HeadersToReturn {
+			ctx.Response().Header.Set(k, v)
 		}
 
 		return ctx.Next()

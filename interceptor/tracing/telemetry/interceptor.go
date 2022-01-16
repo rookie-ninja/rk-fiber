@@ -9,88 +9,44 @@ package rkfibertrace
 import (
 	"context"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rookie-ninja/rk-entry/entry"
-	"github.com/rookie-ninja/rk-fiber/interceptor"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidtrace "github.com/rookie-ninja/rk-entry/middleware/tracing"
 	"github.com/rookie-ninja/rk-fiber/interceptor/context"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
-	"go.opentelemetry.io/otel/attribute"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
-	oteltrace "go.opentelemetry.io/otel/trace"
 	"net/http"
 )
 
 // Interceptor create a interceptor with opentelemetry.
-func Interceptor(opts ...Option) fiber.Handler {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidtrace.Option) fiber.Handler {
+	set := rkmidtrace.NewOptionSet(opts...)
 
 	return func(ctx *fiber.Ctx) error {
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcEntryNameKey, set.EntryName))
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcTracerKey, set.Tracer))
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcTracerProviderKey, set.Provider))
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcPropagatorKey, set.Propagator))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, set.GetEntryName()))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.TracerKey, set.GetTracer()))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.TracerProviderKey, set.GetProvider()))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.PropagatorKey, set.GetPropagator()))
 
-		span := before(ctx, set)
-		defer span.End()
+		req := &http.Request{}
+		fasthttpadaptor.ConvertRequest(ctx.Context(), req, true)
+
+		beforeCtx := set.BeforeCtx(req, false)
+		set.Before(beforeCtx)
+
+		ctx.SetUserContext(beforeCtx.Output.NewCtx)
+
+		// add to context
+		if beforeCtx.Output.Span != nil {
+			traceId := beforeCtx.Output.Span.SpanContext().TraceID().String()
+			rkfiberctx.GetEvent(ctx).SetTraceId(traceId)
+			ctx.Response().Header.Set(rkmid.HeaderTraceId, traceId)
+			ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.SpanKey, beforeCtx.Output.Span))
+		}
 
 		err := ctx.Next()
 
-		after(ctx, span)
+		afterCtx := set.AfterCtx(ctx.Response().StatusCode(), "")
+		set.After(beforeCtx, afterCtx)
 
 		return err
 	}
-}
-
-func before(ctx *fiber.Ctx, set *optionSet) oteltrace.Span {
-	// let's do the trick here, create a http request based on fiber request
-	fakeHttpRequest := &http.Request{}
-	fasthttpadaptor.ConvertRequest(ctx.Context(), fakeHttpRequest, true)
-
-	opts := []oteltrace.SpanStartOption{
-		oteltrace.WithAttributes(semconv.NetAttributesFromHTTPRequest("tcp", fakeHttpRequest)...),
-		oteltrace.WithAttributes(semconv.EndUserAttributesFromHTTPRequest(fakeHttpRequest)...),
-		oteltrace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest(rkentry.GlobalAppCtx.GetAppInfoEntry().AppName, ctx.Path(), fakeHttpRequest)...),
-		oteltrace.WithAttributes(localeToAttributes()...),
-		oteltrace.WithSpanKind(oteltrace.SpanKindServer),
-	}
-
-	// 1: extract tracing info from request header
-	spanCtx := oteltrace.SpanContextFromContext(
-		set.Propagator.Extract(ctx.Context(), &FastHttpHeaderCarrier{&ctx.Request().Header}))
-
-	spanName := ctx.Path()
-	if len(spanName) < 1 {
-		spanName = "rk-span-default"
-	}
-
-	// 2: start new span
-	newRequestCtx, span := set.Tracer.Start(
-		oteltrace.ContextWithRemoteSpanContext(ctx.Context(), spanCtx),
-		spanName, opts...)
-	ctx.SetUserContext(newRequestCtx)
-
-	// 3: read trace id, tracer, traceProvider, propagator and logger into event data and echo context
-	rkfiberctx.GetEvent(ctx).SetTraceId(span.SpanContext().TraceID().String())
-	ctx.Response().Header.Set(rkfiberctx.TraceIdKey, span.SpanContext().TraceID().String())
-	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcSpanKey, span))
-
-	return span
-}
-
-func after(ctx *fiber.Ctx, span oteltrace.Span) {
-	attrs := semconv.HTTPAttributesFromHTTPStatusCode(ctx.Response().StatusCode())
-	spanStatus, spanMessage := semconv.SpanStatusFromHTTPStatusCode(ctx.Response().StatusCode())
-	span.SetAttributes(attrs...)
-	span.SetStatus(spanStatus, spanMessage)
-}
-
-// Convert locale information into attributes.
-func localeToAttributes() []attribute.KeyValue {
-	res := []attribute.KeyValue{
-		attribute.String(rkfiberinter.Realm.Key, rkfiberinter.Realm.String),
-		attribute.String(rkfiberinter.Region.Key, rkfiberinter.Region.String),
-		attribute.String(rkfiberinter.AZ.Key, rkfiberinter.AZ.String),
-		attribute.String(rkfiberinter.Domain.Key, rkfiberinter.Domain.String),
-	}
-
-	return res
 }

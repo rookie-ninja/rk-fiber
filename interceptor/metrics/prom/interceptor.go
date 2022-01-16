@@ -9,35 +9,30 @@ package rkfibermetrics
 import (
 	"context"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rookie-ninja/rk-fiber/interceptor"
-	"time"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidmetrics "github.com/rookie-ninja/rk-entry/middleware/metrics"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"net/http"
+	"strconv"
 )
 
 // Interceptor create a new prometheus metrics interceptor with options.
-func Interceptor(opts ...Option) fiber.Handler {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidmetrics.Option) fiber.Handler {
+	set := rkmidmetrics.NewOptionSet(opts...)
 
 	return func(ctx *fiber.Ctx) error {
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcEntryNameKey, set.EntryName))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, set.GetEntryName()))
 
-		// start timer
-		startTime := time.Now()
+		req := &http.Request{}
+		fasthttpadaptor.ConvertRequest(ctx.Context(), req, true)
+
+		beforeCtx := set.BeforeCtx(req)
+		set.Before(beforeCtx)
 
 		err := ctx.Next()
 
-		// end timer
-		elapsed := time.Now().Sub(startTime)
-
-		// ignoring /rk/v1/assets, /rk/v1/tv and /sw/ path while logging since these are internal APIs.
-		if rkfiberinter.ShouldLog(ctx) {
-			if durationMetrics := GetServerDurationMetrics(ctx); durationMetrics != nil {
-				durationMetrics.Observe(float64(elapsed.Nanoseconds()))
-			}
-
-			if resCodeMetrics := GetServerResCodeMetrics(ctx); resCodeMetrics != nil {
-				resCodeMetrics.Inc()
-			}
-		}
+		afterCtx := set.AfterCtx(strconv.Itoa(ctx.Response().StatusCode()))
+		set.After(beforeCtx, afterCtx)
 
 		return err
 	}

@@ -9,80 +9,49 @@ package rkfibercsrf
 import (
 	"context"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rookie-ninja/rk-common/common"
-	"github.com/rookie-ninja/rk-common/error"
-	"github.com/rookie-ninja/rk-fiber/interceptor"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidcsrf "github.com/rookie-ninja/rk-entry/middleware/csrf"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"net/http"
-	"time"
 )
 
 // Interceptor Add csrf interceptors.
 //
 // Mainly copied from bellow.
 // https://github.com/labstack/echo/blob/master/middleware/csrf.go
-func Interceptor(opts ...Option) fiber.Handler {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidcsrf.Option) fiber.Handler {
+	set := rkmidcsrf.NewOptionSet(opts...)
 
 	return func(ctx *fiber.Ctx) error {
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcEntryNameKey, set.EntryName))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, set.GetEntryName()))
 
-		// 1: skip csrf check based on skipper
-		if set.Skipper(ctx) {
-			return ctx.Next()
+		req := &http.Request{}
+		fasthttpadaptor.ConvertRequest(ctx.Context(), req, true)
+
+		beforeCtx := set.BeforeCtx(req)
+		set.Before(beforeCtx)
+
+		if beforeCtx.Output.ErrResp != nil {
+			ctx.Response().SetStatusCode(beforeCtx.Output.ErrResp.Err.Code)
+			return ctx.JSON(beforeCtx.Output.ErrResp)
 		}
 
-		k := ctx.Cookies(set.CookieName)
-		token := ""
-
-		// 2.1: generate token if failed to get cookie from context
-		if len(k) < 1 {
-			token = rkcommon.RandString(set.TokenLength)
-		} else {
-			// 2.2: reuse token if exists
-			token = k
+		for _, v := range beforeCtx.Output.VaryHeaders {
+			ctx.Response().Header.Add(rkmid.HeaderVary, v)
 		}
 
-		// 3.1: do not check http methods of GET, HEAD, OPTIONS and TRACE
-		switch ctx.Method() {
-		case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
-		default:
-			// 3.2: validate token only for requests which are not defined as 'safe' by RFC7231
-			clientToken, err := set.extractor(ctx)
-			if err != nil {
-				ctx.JSON(rkerror.New(
-					rkerror.WithHttpCode(http.StatusBadRequest),
-					rkerror.WithMessage("failed to extract client token"),
-					rkerror.WithDetails(err)))
-				ctx.Context().SetStatusCode(http.StatusBadRequest)
-				return nil
+		if beforeCtx.Output.Cookie != nil {
+			cookie := &fiber.Cookie{
+				Name:     beforeCtx.Output.Cookie.Name,
+				Value:    beforeCtx.Output.Cookie.Value,
+				Path:     beforeCtx.Output.Cookie.Path,
+				Domain:   beforeCtx.Output.Cookie.Domain,
+				Expires:  beforeCtx.Output.Cookie.Expires,
+				Secure:   beforeCtx.Output.Cookie.Secure,
+				HTTPOnly: beforeCtx.Output.Cookie.HttpOnly,
 			}
 
-			// 3.3: return 403 to client if token is not matched
-			if !isValidToken(token, clientToken) {
-				ctx.JSON(rkerror.New(
-					rkerror.WithHttpCode(http.StatusForbidden),
-					rkerror.WithMessage("invalid csrf token")))
-				ctx.Context().SetStatusCode(http.StatusForbidden)
-				return nil
-			}
-		}
-
-		// set CSRF cookie
-		cookie := &fiber.Cookie{}
-		cookie.Name = set.CookieName
-		cookie.Value = token
-
-		// 4.1
-		if set.CookiePath != "" {
-			cookie.Path = set.CookiePath
-		}
-		// 4.2
-		if set.CookieDomain != "" {
-			cookie.Domain = set.CookieDomain
-		}
-		// 4.3
-		if set.CookieSameSite != http.SameSiteDefaultMode {
-			switch set.CookieSameSite {
+			switch beforeCtx.Output.Cookie.SameSite {
 			case http.SameSiteNoneMode:
 				cookie.SameSite = fiber.CookieSameSiteNoneMode
 			case http.SameSiteLaxMode:
@@ -90,17 +59,12 @@ func Interceptor(opts ...Option) fiber.Handler {
 			case http.SameSiteStrictMode:
 				cookie.SameSite = fiber.CookieSameSiteStrictMode
 			}
+
+			ctx.Cookie(cookie)
 		}
-		cookie.Expires = time.Now().Add(time.Duration(set.CookieMaxAge) * time.Second)
-		cookie.Secure = set.CookieSameSite == http.SameSiteNoneMode
-		cookie.HTTPOnly = set.CookieHTTPOnly
-		ctx.Cookie(cookie)
 
 		// store token in the context
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcCsrfTokenKey, token))
-
-		// protect clients from caching the response
-		ctx.Response().Header.Add(headerVary, headerCookie)
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.CsrfTokenKey, beforeCtx.Input.Token))
 
 		return ctx.Next()
 	}

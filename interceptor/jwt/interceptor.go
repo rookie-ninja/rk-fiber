@@ -9,8 +9,9 @@ package rkfiberjwt
 import (
 	"context"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rookie-ninja/rk-common/error"
-	"github.com/rookie-ninja/rk-fiber/interceptor"
+	"github.com/rookie-ninja/rk-entry/middleware"
+	"github.com/rookie-ninja/rk-entry/middleware/jwt"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"net/http"
 )
 
@@ -18,51 +19,26 @@ import (
 //
 // Mainly copied from bellow.
 // https://github.com/labstack/echo/blob/master/middleware/jwt.go
-func Interceptor(opts ...Option) fiber.Handler {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidjwt.Option) fiber.Handler {
+	set := rkmidjwt.NewOptionSet(opts...)
 
 	return func(ctx *fiber.Ctx) error {
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcEntryNameKey, set.EntryName))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, set.GetEntryName()))
 
-		if set.Skipper(ctx) {
-			return ctx.Next()
-		}
+		req := &http.Request{}
+		fasthttpadaptor.ConvertRequest(ctx.Context(), req, true)
 
-		// extract token from extractor
-		var auth string
-		var err error
-		for _, extractor := range set.extractors {
-			// Extract token from extractor, if it's not fail break the loop and
-			// set auth
-			auth, err = extractor(ctx)
-			if err == nil {
-				break
-			}
-		}
+		beforeCtx := set.BeforeCtx(req, nil)
+		set.Before(beforeCtx)
 
-		if err != nil {
-			ctx.JSON(rkerror.New(
-				rkerror.WithHttpCode(http.StatusUnauthorized),
-				rkerror.WithMessage("invalid or expired jwt"),
-				rkerror.WithDetails(err)))
-			ctx.Context().SetStatusCode(http.StatusUnauthorized)
-			return nil
-		}
-
-		// parse token
-		token, err := set.ParseTokenFunc(auth, ctx)
-
-		if err != nil {
-			ctx.JSON(rkerror.New(
-				rkerror.WithHttpCode(http.StatusUnauthorized),
-				rkerror.WithMessage("invalid or expired jwt"),
-				rkerror.WithDetails(err)))
-			ctx.Context().SetStatusCode(http.StatusUnauthorized)
-			return nil
+		// case 1: error response
+		if beforeCtx.Output.ErrResp != nil {
+			ctx.Response().SetStatusCode(beforeCtx.Output.ErrResp.Err.Code)
+			return ctx.JSON(beforeCtx.Output.ErrResp)
 		}
 
 		// insert into context
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcJwtTokenKey, token))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.JwtTokenKey, beforeCtx.Output.JwtToken))
 
 		return ctx.Next()
 	}

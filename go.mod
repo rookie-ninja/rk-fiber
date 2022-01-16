@@ -10,7 +10,7 @@ require (
 	github.com/markbates/pkger v0.17.1
 	github.com/prometheus/client_golang v1.10.0
 	github.com/rookie-ninja/rk-common v1.2.3
-	github.com/rookie-ninja/rk-entry v1.0.4
+	github.com/rookie-ninja/rk-entry v1.0.5-0.20220115151807-5a8f2f3818c2
 	github.com/rookie-ninja/rk-logger v1.2.3
 	github.com/rookie-ninja/rk-prom v1.1.4
 	github.com/rookie-ninja/rk-query v1.2.4

@@ -9,16 +9,72 @@ package rkfibertimeout
 import (
 	"context"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rookie-ninja/rk-fiber/interceptor"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidtimeout "github.com/rookie-ninja/rk-entry/middleware/timeout"
+	rkfiberctx "github.com/rookie-ninja/rk-fiber/interceptor/context"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"net/http"
 )
 
 // Interceptor Add timeout interceptors.
-func Interceptor(opts ...Option) fiber.Handler {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidtimeout.Option) fiber.Handler {
+	set := rkmidtimeout.NewOptionSet(opts...)
 
 	return func(ctx *fiber.Ctx) error {
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcEntryNameKey, set.EntryName))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, set.GetEntryName()))
 
-		return set.Tick(ctx)
+		req := &http.Request{}
+		fasthttpadaptor.ConvertRequest(ctx.Context(), req, true)
+
+		// case 1: return to user if error occur
+		beforeCtx := set.BeforeCtx(req, rkfiberctx.GetEvent(ctx))
+		toCtx := &timeoutCtx{
+			fiberCtx: ctx,
+			before:   beforeCtx,
+		}
+		// assign handlers
+		beforeCtx.Input.InitHandler = initHandler(toCtx)
+		beforeCtx.Input.NextHandler = nextHandler(toCtx)
+		beforeCtx.Input.PanicHandler = panicHandler(toCtx)
+		beforeCtx.Input.FinishHandler = finishHandler(toCtx)
+		beforeCtx.Input.TimeoutHandler = timeoutHandler(toCtx)
+
+		// call before
+		set.Before(beforeCtx)
+
+		beforeCtx.Output.WaitFunc()
+
+		return toCtx.nextError
 	}
+}
+
+type timeoutCtx struct {
+	fiberCtx  *fiber.Ctx
+	before    *rkmidtimeout.BeforeCtx
+	nextError error
+}
+
+func timeoutHandler(ctx *timeoutCtx) func() {
+	return func() {
+		ctx.fiberCtx.Response().SetStatusCode(ctx.before.Output.TimeoutErrResp.Err.Code)
+		ctx.fiberCtx.JSON(ctx.before.Output.TimeoutErrResp)
+	}
+}
+
+func finishHandler(ctx *timeoutCtx) func() {
+	return func() {}
+}
+
+func panicHandler(ctx *timeoutCtx) func() {
+	return func() {}
+}
+
+func nextHandler(ctx *timeoutCtx) func() {
+	return func() {
+		ctx.nextError = ctx.fiberCtx.Next()
+	}
+}
+
+func initHandler(ctx *timeoutCtx) func() {
+	return func() {}
 }

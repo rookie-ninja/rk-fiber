@@ -8,7 +8,8 @@ package rkfiberauth
 import (
 	"fmt"
 	"github.com/gofiber/fiber/v2"
-	rkfiberinter "github.com/rookie-ninja/rk-fiber/interceptor"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidauth "github.com/rookie-ninja/rk-entry/middleware/auth"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -21,10 +22,10 @@ func TestInterceptor_WithIgnoringPath(t *testing.T) {
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithBasicAuth("ut-realm", "user:pass"),
-		WithApiKeyAuth("ut-api-key"),
-		WithIgnorePrefix("/ut-ignore-path"))
+		rkmidauth.WithEntryNameAndType("ut-entry", "ut-type"),
+		rkmidauth.WithBasicAuth("ut-realm", "user:pass"),
+		rkmidauth.WithApiKeyAuth("ut-api-key"),
+		rkmidauth.WithIgnorePrefix("/ut-ignore-path"))
 
 	app.Use(handler)
 	app.Get("/ut-ignore-path", func(ctx *fiber.Ctx) error {
@@ -43,8 +44,8 @@ func TestInterceptor_WithBasicAuth_Invalid(t *testing.T) {
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithBasicAuth("ut-realm", "user:pass"))
+		rkmidauth.WithEntryNameAndType("ut-entry", "ut-type"),
+		rkmidauth.WithBasicAuth("ut-realm", "user:pass"))
 
 	app.Use(handler)
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
@@ -52,7 +53,7 @@ func TestInterceptor_WithBasicAuth_Invalid(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	req.Header.Set(rkfiberinter.RpcAuthorizationHeaderKey, "invalid")
+	req.Header.Set(rkmid.HeaderAuthorization, "invalid")
 	resp, err := app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
@@ -64,8 +65,8 @@ func TestInterceptor_WithBasicAuth_InvalidBasicAuth(t *testing.T) {
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithBasicAuth("ut-realm", "user:pass"))
+		rkmidauth.WithEntryNameAndType("ut-entry", "ut-type"),
+		rkmidauth.WithBasicAuth("ut-realm", "user:pass"))
 
 	app.Use(handler)
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
@@ -73,7 +74,7 @@ func TestInterceptor_WithBasicAuth_InvalidBasicAuth(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	req.Header.Set(rkfiberinter.RpcAuthorizationHeaderKey, fmt.Sprintf("%s invalid", typeBasic))
+	req.Header.Set(rkmid.HeaderAuthorization, fmt.Sprintf("%s invalid", "Basic"))
 	resp, err := app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
@@ -85,8 +86,8 @@ func TestInterceptor_WithApiKey_Invalid(t *testing.T) {
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithApiKeyAuth("ut-api-key"))
+		rkmidauth.WithEntryNameAndType("ut-entry", "ut-type"),
+		rkmidauth.WithApiKeyAuth("ut-api-key"))
 
 	app.Use(handler)
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
@@ -94,7 +95,7 @@ func TestInterceptor_WithApiKey_Invalid(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	req.Header.Set(rkfiberinter.RpcApiKeyHeaderKey, "invalid")
+	req.Header.Set(rkmid.HeaderApiKey, "invalid")
 	resp, err := app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
@@ -106,8 +107,8 @@ func TestInterceptor_MissingAuth(t *testing.T) {
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithApiKeyAuth("ut-api-key"))
+		rkmidauth.WithEntryNameAndType("ut-entry", "ut-type"),
+		rkmidauth.WithApiKeyAuth("ut-api-key"))
 
 	app.Use(handler)
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
@@ -126,9 +127,9 @@ func TestInterceptor_HappyCase(t *testing.T) {
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
+		rkmidauth.WithEntryNameAndType("ut-entry", "ut-type"),
 		//WithBasicAuth("ut-realm", "user:pass"),
-		WithApiKeyAuth("ut-api-key"))
+		rkmidauth.WithApiKeyAuth("ut-api-key"))
 
 	app.Use(handler)
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
@@ -136,7 +137,7 @@ func TestInterceptor_HappyCase(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	req.Header.Set(rkfiberinter.RpcApiKeyHeaderKey, "ut-api-key")
+	req.Header.Set(rkmid.HeaderApiKey, "ut-api-key")
 	resp, err := app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)

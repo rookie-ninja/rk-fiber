@@ -8,6 +8,8 @@ package rkfiberlog
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/rookie-ninja/rk-entry/entry"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidlog "github.com/rookie-ninja/rk-entry/middleware/log"
 	"github.com/rookie-ninja/rk-fiber/interceptor/context"
 	"github.com/rookie-ninja/rk-query"
 	"github.com/stretchr/testify/assert"
@@ -26,9 +28,9 @@ func TestInterceptor_WithShouldNotLog(t *testing.T) {
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithZapLoggerEntry(rkentry.NoopZapLoggerEntry()),
-		WithEventLoggerEntry(rkentry.NoopEventLoggerEntry()))
+		rkmidlog.WithEntryNameAndType("ut-entry", "ut-type"),
+		rkmidlog.WithZapLoggerEntry(rkentry.NoopZapLoggerEntry()),
+		rkmidlog.WithEventLoggerEntry(rkentry.NoopEventLoggerEntry()))
 
 	app.Use(handler)
 	app.Get("/rk/v1/assets", func(ctx *fiber.Ctx) error {
@@ -46,9 +48,9 @@ func TestInterceptor_HappyCase(t *testing.T) {
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithZapLoggerEntry(rkentry.NoopZapLoggerEntry()),
-		WithEventLoggerEntry(rkentry.NoopEventLoggerEntry()))
+		rkmidlog.WithEntryNameAndType("ut-entry", "ut-type"),
+		rkmidlog.WithZapLoggerEntry(rkentry.NoopZapLoggerEntry()),
+		rkmidlog.WithEventLoggerEntry(rkentry.NoopEventLoggerEntry()))
 
 	var eventForValidation rkquery.Event
 
@@ -59,8 +61,8 @@ func TestInterceptor_HappyCase(t *testing.T) {
 		return nil
 	})
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
-		ctx.Response().Header.Set(rkfiberctx.RequestIdKey, "ut-request-id")
-		ctx.Response().Header.Set(rkfiberctx.TraceIdKey, "ut-trace-id")
+		ctx.Response().Header.Set(rkmid.HeaderRequestId, "ut-request-id")
+		ctx.Response().Header.Set(rkmid.HeaderTraceId, "ut-trace-id")
 		return nil
 	})
 

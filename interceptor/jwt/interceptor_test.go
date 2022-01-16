@@ -9,6 +9,8 @@ import (
 	"errors"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidjwt "github.com/rookie-ninja/rk-entry/middleware/jwt"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -23,52 +25,41 @@ var userHandler = func(ctx *fiber.Ctx) error {
 func TestInterceptor(t *testing.T) {
 	defer assertNotPanic(t)
 
-	// with skipper
+	// without options
 	app := fiber.New()
-	app.Use(Interceptor(WithSkipper(func(*fiber.Ctx) bool {
-		return true
-	})))
+	app.Use(Interceptor())
 	app.Get("/ut-path", userHandler)
 	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
 	resp, err := app.Test(req)
 	assert.Nil(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// without options
-	app = fiber.New()
-	app.Use(Interceptor())
-	app.Get("/ut-path", userHandler)
-	req = httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	resp, err = app.Test(req)
-	assert.Nil(t, err)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	// with parse token error
-	parseTokenErrFunc := func(auth string, c *fiber.Ctx) (*jwt.Token, error) {
+	parseTokenErrFunc := func(auth string) (*jwt.Token, error) {
 		return nil, errors.New("ut-error")
 	}
 
 	app = fiber.New()
 	app.Use(Interceptor(
-		WithParseTokenFunc(parseTokenErrFunc)))
+		rkmidjwt.WithParseTokenFunc(parseTokenErrFunc)))
 	app.Get("/ut-path", userHandler)
 	req = httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	req.Header.Set(headerAuthorization, strings.Join([]string{"Bearer", "ut-auth"}, " "))
+	req.Header.Set(rkmid.HeaderAuthorization, strings.Join([]string{"Bearer", "ut-auth"}, " "))
 	resp, err = app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	// happy case
-	parseTokenErrFunc = func(auth string, c *fiber.Ctx) (*jwt.Token, error) {
+	parseTokenErrFunc = func(auth string) (*jwt.Token, error) {
 		return &jwt.Token{}, nil
 	}
 
 	app = fiber.New()
 	app.Use(Interceptor(
-		WithParseTokenFunc(parseTokenErrFunc)))
+		rkmidjwt.WithParseTokenFunc(parseTokenErrFunc)))
 	app.Get("/ut-path", userHandler)
 	req = httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	req.Header.Set(headerAuthorization, strings.Join([]string{"Bearer", "ut-auth"}, " "))
+	req.Header.Set(rkmid.HeaderAuthorization, strings.Join([]string{"Bearer", "ut-auth"}, " "))
 	resp, err = app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)

@@ -8,25 +8,25 @@ package rkfibertimeout
 import (
 	"fmt"
 	"github.com/gofiber/fiber/v2"
+	rkmidtimeout "github.com/rookie-ninja/rk-entry/middleware/timeout"
 	"github.com/stretchr/testify/assert"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
 
-func sleepHandler(ctx *fiber.Ctx) error {
+func sleepH(ctx *fiber.Ctx) error {
 	time.Sleep(2 * time.Second)
 	ctx.JSON(http.StatusOK)
 	return nil
 }
 
-func panicHandler(ctx *fiber.Ctx) error {
+func panicH(ctx *fiber.Ctx) error {
 	panic(fmt.Errorf("ut panic"))
 }
 
-func returnHandler(ctx *fiber.Ctx) error {
+func returnH(ctx *fiber.Ctx) error {
 	ctx.JSON(http.StatusOK)
 	return nil
 }
@@ -44,49 +44,30 @@ func getFiberApp(userHandler fiber.Handler, interceptor fiber.Handler) *fiber.Ap
 
 func TestInterceptor_WithTimeout(t *testing.T) {
 	// with global timeout response
-	app := getFiberApp(sleepHandler, Interceptor(
-		WithTimeoutAndResp(time.Nanosecond, nil)))
+	app := getFiberApp(sleepH, Interceptor(
+		rkmidtimeout.WithTimeout(time.Nanosecond)))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	resp, err := app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusRequestTimeout, resp.StatusCode)
 
 	// with path
-	app = getFiberApp(sleepHandler, Interceptor(
-		WithTimeoutAndRespByPath("/", time.Nanosecond, nil)))
+	app = getFiberApp(sleepH, Interceptor(
+		rkmidtimeout.WithTimeoutByPath("/", time.Nanosecond)))
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
 	resp, err = app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusRequestTimeout, resp.StatusCode)
-
-	// with custom response
-	app = getFiberApp(sleepHandler, Interceptor(
-		WithTimeoutAndRespByPath("/", time.Nanosecond, customResponse)))
-	req = httptest.NewRequest(http.MethodGet, "/", nil)
-	resp, err = app.Test(req)
-	assert.Nil(t, err)
-	assert.Equal(t, http.StatusRequestTimeout, resp.StatusCode)
-	bodyBytes, _ := ioutil.ReadAll(resp.Body)
-	assert.Contains(t, string(bodyBytes), customResponse(nil).Error())
-}
-
-func TestInterceptor_WithPanic(t *testing.T) {
-	app := getFiberApp(panicHandler, Interceptor(
-		WithTimeoutAndResp(time.Minute, nil)))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	resp, err := app.Test(req)
-	assert.Nil(t, err)
-	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 }
 
 func TestInterceptor_HappyCase(t *testing.T) {
 	// Let's add two routes /timeout and /happy
 	// We expect interceptor acts as the name describes
-	app := getFiberApp(panicHandler, Interceptor(
-		WithTimeoutAndRespByPath("/timeout", time.Nanosecond, nil),
-		WithTimeoutAndRespByPath("/happy", time.Minute, nil)))
-	app.Get("/timeout", sleepHandler)
-	app.Get("/happy", returnHandler)
+	app := getFiberApp(panicH, Interceptor(
+		rkmidtimeout.WithTimeoutByPath("/timeout", time.Nanosecond),
+		rkmidtimeout.WithTimeoutByPath("/happy", time.Minute)))
+	app.Get("/timeout", sleepH)
+	app.Get("/happy", returnH)
 
 	req := httptest.NewRequest(http.MethodGet, "/timeout", nil)
 	resp, err := app.Test(req)

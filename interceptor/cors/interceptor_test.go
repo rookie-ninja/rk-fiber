@@ -6,6 +6,7 @@ package rkfibercors
 
 import (
 	"github.com/gofiber/fiber/v2"
+	rkmidcors "github.com/rookie-ninja/rk-entry/middleware/cors"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -17,29 +18,15 @@ const originHeaderValue = "http://ut-origin"
 func TestInterceptor(t *testing.T) {
 	defer assertNotPanic(t)
 
-	// with skipper
+	// with empty option, all request will be passed
 	app := fiber.New()
-	app.Use(Interceptor(WithSkipper(func(context *fiber.Ctx) bool {
-		return true
-	})))
+	app.Use(Interceptor())
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
 		return nil
 	})
 	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
 	req.Header.Set(fiber.HeaderOrigin, originHeaderValue)
 	resp, err := app.Test(req)
-	assert.Nil(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// with empty option, all request will be passed
-	app = fiber.New()
-	app.Use(Interceptor())
-	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
-		return nil
-	})
-	req = httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	req.Header.Set(fiber.HeaderOrigin, originHeaderValue)
-	resp, err = app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -68,7 +55,7 @@ func TestInterceptor(t *testing.T) {
 
 	// match 2
 	app = fiber.New()
-	app.Use(Interceptor(WithAllowOrigins("http://do-not-pass-through")))
+	app.Use(Interceptor(rkmidcors.WithAllowOrigins("http://do-not-pass-through")))
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
 		return nil
 	})
@@ -93,7 +80,7 @@ func TestInterceptor(t *testing.T) {
 
 	// match 3.1
 	app = fiber.New()
-	app.Use(Interceptor(WithAllowCredentials(true)))
+	app.Use(Interceptor(rkmidcors.WithAllowCredentials(true)))
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
 		return nil
 	})
@@ -108,8 +95,8 @@ func TestInterceptor(t *testing.T) {
 	// match 3.2
 	app = fiber.New()
 	app.Use(Interceptor(
-		WithAllowCredentials(true),
-		WithExposeHeaders("expose")))
+		rkmidcors.WithAllowCredentials(true),
+		rkmidcors.WithExposeHeaders("expose")))
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {
 		return nil
 	})
@@ -142,7 +129,7 @@ func TestInterceptor(t *testing.T) {
 
 	// match 4.1
 	app = fiber.New()
-	app.Use(Interceptor(WithAllowCredentials(true)))
+	app.Use(Interceptor(rkmidcors.WithAllowCredentials(true)))
 	app.Options("/ut-path", func(ctx *fiber.Ctx) error {
 		return nil
 	})
@@ -161,7 +148,7 @@ func TestInterceptor(t *testing.T) {
 
 	// match 4.2
 	app = fiber.New()
-	app.Use(Interceptor(WithAllowHeaders("ut-header")))
+	app.Use(Interceptor(rkmidcors.WithAllowHeaders("ut-header")))
 	app.Options("/ut-path", func(ctx *fiber.Ctx) error {
 		return nil
 	})
@@ -180,7 +167,7 @@ func TestInterceptor(t *testing.T) {
 
 	// match 4.3
 	app = fiber.New()
-	app.Use(Interceptor(WithMaxAge(1)))
+	app.Use(Interceptor(rkmidcors.WithMaxAge(1)))
 	app.Options("/ut-path", func(ctx *fiber.Ctx) error {
 		return nil
 	})

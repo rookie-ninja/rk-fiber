@@ -7,6 +7,7 @@ package rkfibertrace
 
 import (
 	"github.com/gofiber/fiber/v2"
+	rkmidtrace "github.com/rookie-ninja/rk-entry/middleware/tracing"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -14,13 +15,11 @@ import (
 )
 
 func TestInterceptor(t *testing.T) {
-	defer assertNotPanic(t)
-
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithExporter(&NoopExporter{}))
+		rkmidtrace.WithEntryNameAndType("ut-entry", "ut-type"),
+		rkmidtrace.WithExporter(&rkmidtrace.NoopExporter{}))
 
 	app.Use(handler)
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {

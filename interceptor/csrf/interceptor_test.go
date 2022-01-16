@@ -7,6 +7,8 @@ package rkfibercsrf
 
 import (
 	"github.com/gofiber/fiber/v2"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidcsrf "github.com/rookie-ninja/rk-entry/middleware/csrf"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -20,26 +22,14 @@ var userHandler = func(ctx *fiber.Ctx) error {
 func TestInterceptor(t *testing.T) {
 	defer assertNotPanic(t)
 
-	// match 1
-	app := fiber.New()
-
-	app.Use(Interceptor(WithSkipper(func(context *fiber.Ctx) bool {
-		return true
-	})))
-	app.Get("/ut-path", userHandler)
-	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	resp, err := app.Test(req)
-	assert.Nil(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
 	// match 2.1
-	app = fiber.New()
+	app := fiber.New()
 
 	app.Use(Interceptor())
 	app.Get("/ut-path", userHandler)
 
-	req = httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	resp, err = app.Test(req)
+	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
+	resp, err := app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Contains(t, resp.Header.Get("Set-Cookie"), "_csrf")
@@ -89,7 +79,7 @@ func TestInterceptor(t *testing.T) {
 	app.Post("/ut-path", userHandler)
 
 	req = httptest.NewRequest(http.MethodPost, "/ut-path", nil)
-	req.Header.Set(headerXCSRFToken, "ut-csrf-token")
+	req.Header.Set(rkmid.HeaderXCSRFToken, "ut-csrf-token")
 	resp, err = app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
@@ -97,7 +87,7 @@ func TestInterceptor(t *testing.T) {
 	// match 4.1
 	app = fiber.New()
 
-	app.Use(Interceptor(WithCookiePath("ut-path")))
+	app.Use(Interceptor(rkmidcsrf.WithCookiePath("ut-path")))
 	app.Get("/ut-path", userHandler)
 
 	req = httptest.NewRequest(http.MethodGet, "/ut-path", nil)
@@ -109,7 +99,7 @@ func TestInterceptor(t *testing.T) {
 	// match 4.2
 	app = fiber.New()
 
-	app.Use(Interceptor(WithCookieDomain("ut-domain")))
+	app.Use(Interceptor(rkmidcsrf.WithCookieDomain("ut-domain")))
 	app.Get("/ut-path", userHandler)
 
 	req = httptest.NewRequest(http.MethodGet, "/ut-path", nil)
@@ -121,7 +111,7 @@ func TestInterceptor(t *testing.T) {
 	// match 4.3
 	app = fiber.New()
 
-	app.Use(Interceptor(WithCookieSameSite(http.SameSiteStrictMode)))
+	app.Use(Interceptor(rkmidcsrf.WithCookieSameSite(http.SameSiteStrictMode)))
 	app.Get("/ut-path", userHandler)
 
 	req = httptest.NewRequest(http.MethodGet, "/ut-path", nil)

@@ -8,6 +8,7 @@ package rkfibermetrics
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	rkmidmetrics "github.com/rookie-ninja/rk-entry/middleware/metrics"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -20,8 +21,8 @@ func TestInterceptor(t *testing.T) {
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"),
-		WithRegisterer(prometheus.NewRegistry()))
+		rkmidmetrics.WithEntryNameAndType("ut-entry", "ut-type"),
+		rkmidmetrics.WithRegisterer(prometheus.NewRegistry()))
 
 	app.Use(handler)
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {

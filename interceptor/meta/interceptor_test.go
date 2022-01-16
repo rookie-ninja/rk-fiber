@@ -7,6 +7,7 @@ package rkfibermeta
 
 import (
 	"github.com/gofiber/fiber/v2"
+	rkmidmeta "github.com/rookie-ninja/rk-entry/middleware/meta"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +20,7 @@ func TestInterceptor(t *testing.T) {
 	app := fiber.New()
 
 	handler := Interceptor(
-		WithEntryNameAndType("ut-entry", "ut-type"))
+		rkmidmeta.WithEntryNameAndType("ut-entry", "ut-type"))
 
 	app.Use(handler)
 	app.Get("/ut-path", func(ctx *fiber.Ctx) error {

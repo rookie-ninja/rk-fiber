@@ -9,30 +9,28 @@ package rkfiberlimit
 import (
 	"context"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rookie-ninja/rk-common/error"
-	"github.com/rookie-ninja/rk-fiber/interceptor"
-	"github.com/rookie-ninja/rk-fiber/interceptor/context"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
+	rkmidlimit "github.com/rookie-ninja/rk-entry/middleware/ratelimit"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"net/http"
 )
 
 // Interceptor Add rate limit interceptors.
-func Interceptor(opts ...Option) fiber.Handler {
-	set := newOptionSet(opts...)
+func Interceptor(opts ...rkmidlimit.Option) fiber.Handler {
+	set := rkmidlimit.NewOptionSet(opts...)
 
 	return func(ctx *fiber.Ctx) error {
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkfiberinter.RpcEntryNameKey, set.EntryName))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, set.GetEntryName()))
 
-		event := rkfiberctx.GetEvent(ctx)
+		req := &http.Request{}
+		fasthttpadaptor.ConvertRequest(ctx.Context(), req, true)
 
-		if duration, err := set.Wait(ctx); err != nil {
-			event.SetCounter("rateLimitWaitMs", duration.Milliseconds())
-			event.AddErr(err)
+		beforeCtx := set.BeforeCtx(req)
+		set.Before(beforeCtx)
 
-			ctx.JSON(rkerror.New(
-				rkerror.WithHttpCode(http.StatusTooManyRequests),
-				rkerror.WithDetails(err)))
-			ctx.Context().SetStatusCode(http.StatusTooManyRequests)
-			return nil
+		if beforeCtx.Output.ErrResp != nil {
+			ctx.Response().SetStatusCode(beforeCtx.Output.ErrResp.Err.Code)
+			return ctx.JSON(beforeCtx.Output.ErrResp)
 		}
 
 		return ctx.Next()

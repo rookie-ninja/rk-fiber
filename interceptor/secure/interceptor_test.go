@@ -7,6 +7,7 @@ package rkfibersec
 
 import (
 	"github.com/gofiber/fiber/v2"
+	rkmidsec "github.com/rookie-ninja/rk-entry/middleware/secure"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
@@ -20,23 +21,12 @@ var userHandler = func(ctx *fiber.Ctx) error {
 func TestInterceptor(t *testing.T) {
 	defer assertNotPanic(t)
 
-	// with skipper
+	// without options
 	app := fiber.New()
-	app.Use(Interceptor(WithSkipper(func(*fiber.Ctx) bool {
-		return true
-	})))
+	app.Use(Interceptor())
 	app.Get("/ut-path", userHandler)
 	req := httptest.NewRequest(http.MethodGet, "/ut-path", nil)
 	resp, err := app.Test(req)
-	assert.Nil(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// without options
-	app = fiber.New()
-	app.Use(Interceptor())
-	app.Get("/ut-path", userHandler)
-	req = httptest.NewRequest(http.MethodGet, "/ut-path", nil)
-	resp, err = app.Test(req)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	containsHeader(t, resp,
@@ -47,16 +37,16 @@ func TestInterceptor(t *testing.T) {
 	// with options
 	app = fiber.New()
 	app.Use(Interceptor(
-		WithXSSProtection("ut-xss"),
-		WithContentTypeNosniff("ut-sniff"),
-		WithXFrameOptions("ut-frame"),
-		WithHSTSMaxAge(10),
-		WithHSTSExcludeSubdomains(true),
-		WithHSTSPreloadEnabled(true),
-		WithContentSecurityPolicy("ut-policy"),
-		WithCSPReportOnly(true),
-		WithReferrerPolicy("ut-ref"),
-		WithIgnorePrefix("ut-prefix")))
+		rkmidsec.WithXSSProtection("ut-xss"),
+		rkmidsec.WithContentTypeNosniff("ut-sniff"),
+		rkmidsec.WithXFrameOptions("ut-frame"),
+		rkmidsec.WithHSTSMaxAge(10),
+		rkmidsec.WithHSTSExcludeSubdomains(true),
+		rkmidsec.WithHSTSPreloadEnabled(true),
+		rkmidsec.WithContentSecurityPolicy("ut-policy"),
+		rkmidsec.WithCSPReportOnly(true),
+		rkmidsec.WithReferrerPolicy("ut-ref"),
+		rkmidsec.WithIgnorePrefix("ut-prefix")))
 	app.Get("/ut-path", userHandler)
 	req = httptest.NewRequest(http.MethodGet, "/ut-path", nil)
 	req.Header.Set(fiber.HeaderXForwardedProto, "https")

@@ -10,7 +10,7 @@ import (
 	"context"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/rookie-ninja/rk-fiber/interceptor"
+	rkmid "github.com/rookie-ninja/rk-entry/middleware"
 	"github.com/rookie-ninja/rk-logger"
 	"github.com/rookie-ninja/rk-query"
 	"github.com/valyala/fasthttp"
@@ -19,13 +19,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"net/http"
-)
-
-const (
-	// RequestIdKey is the header key sent to client
-	RequestIdKey = "X-Request-Id"
-	// TraceIdKey is the header sent to client
-	TraceIdKey = "X-Trace-Id"
 )
 
 var (
@@ -64,7 +57,7 @@ func GetEvent(ctx *fiber.Ctx) rkquery.Event {
 		return noopEvent
 	}
 
-	if raw := ctx.UserContext().Value(rkfiberinter.RpcEventKey); raw != nil {
+	if raw := ctx.UserContext().Value(rkmid.EventKey); raw != nil {
 		return raw.(rkquery.Event)
 	}
 
@@ -77,7 +70,7 @@ func GetLogger(ctx *fiber.Ctx) *zap.Logger {
 		return rklogger.NoopLogger
 	}
 
-	if raw := ctx.UserContext().Value(rkfiberinter.RpcLoggerKey); raw != nil {
+	if raw := ctx.UserContext().Value(rkmid.LoggerKey); raw != nil {
 		requestId := GetRequestId(ctx)
 		traceId := GetTraceId(ctx)
 		fields := make([]zap.Field, 0)
@@ -102,7 +95,7 @@ func GetRequestId(ctx *fiber.Ctx) string {
 		return ""
 	}
 
-	return string(ctx.Response().Header.Peek(RequestIdKey))
+	return string(ctx.Response().Header.Peek(rkmid.HeaderRequestId))
 }
 
 // GetTraceId extract trace id from context.
@@ -111,7 +104,7 @@ func GetTraceId(ctx *fiber.Ctx) string {
 		return ""
 	}
 
-	return string(ctx.Response().Header.Peek(TraceIdKey))
+	return string(ctx.Response().Header.Peek(rkmid.HeaderTraceId))
 }
 
 // GetEntryName extract entry name from context.
@@ -120,7 +113,7 @@ func GetEntryName(ctx *fiber.Ctx) string {
 		return ""
 	}
 
-	if raw := ctx.UserContext().Value(rkfiberinter.RpcEntryNameKey); raw != nil {
+	if raw := ctx.UserContext().Value(rkmid.EntryNameKey); raw != nil {
 		return raw.(string)
 	}
 
@@ -137,7 +130,7 @@ func GetTraceSpan(ctx *fiber.Ctx) trace.Span {
 
 	_, span = noopTracerProvider.Tracer("rk-trace-noop").Start(ctx.Context(), "noop-span")
 
-	if raw := ctx.UserContext().Value(rkfiberinter.RpcSpanKey); raw != nil {
+	if raw := ctx.UserContext().Value(rkmid.SpanKey); raw != nil {
 		return raw.(trace.Span)
 	}
 
@@ -150,7 +143,7 @@ func GetTracer(ctx *fiber.Ctx) trace.Tracer {
 		return noopTracerProvider.Tracer("rk-trace-noop")
 	}
 
-	if raw := ctx.UserContext().Value(rkfiberinter.RpcTracerKey); raw != nil {
+	if raw := ctx.UserContext().Value(rkmid.TracerKey); raw != nil {
 		return raw.(trace.Tracer)
 	}
 
@@ -163,7 +156,7 @@ func GetTracerProvider(ctx *fiber.Ctx) trace.TracerProvider {
 		return noopTracerProvider
 	}
 
-	if raw := ctx.UserContext().Value(rkfiberinter.RpcTracerProviderKey); raw != nil {
+	if raw := ctx.UserContext().Value(rkmid.TracerProviderKey); raw != nil {
 		return raw.(trace.TracerProvider)
 	}
 
@@ -176,7 +169,7 @@ func GetTracerPropagator(ctx *fiber.Ctx) propagation.TextMapPropagator {
 		return nil
 	}
 
-	if raw := ctx.UserContext().Value(rkfiberinter.RpcPropagatorKey); raw != nil {
+	if raw := ctx.UserContext().Value(rkmid.PropagatorKey); raw != nil {
 		return raw.(propagation.TextMapPropagator)
 	}
 
@@ -224,7 +217,7 @@ func GetJwtToken(ctx *fiber.Ctx) *jwt.Token {
 		return nil
 	}
 
-	if raw := ctx.UserContext().Value(rkfiberinter.RpcJwtTokenKey); raw != nil {
+	if raw := ctx.UserContext().Value(rkmid.JwtTokenKey); raw != nil {
 		if res, ok := raw.(*jwt.Token); ok {
 			return res
 		}
@@ -239,7 +232,7 @@ func GetCsrfToken(ctx *fiber.Ctx) string {
 		return ""
 	}
 
-	if raw := ctx.UserContext().Value(rkfiberinter.RpcCsrfTokenKey); raw != nil {
+	if raw := ctx.UserContext().Value(rkmid.CsrfTokenKey); raw != nil {
 		if res, ok := raw.(string); ok {
 			return res
 		}
