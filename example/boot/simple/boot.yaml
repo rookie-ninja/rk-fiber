@@ -1,8 +1,14 @@
 ---
+eventLogger:
+  - name: event-logger
+    loki:
+      enabled: true
 fiber:
   - name: greeter                     # Required
     port: 8080                        # Required
     enabled: true                     # Required
+    logger:
+      eventLogger: event-logger
     tv:
       enabled: true                   # Optional, default: false
     prom:
