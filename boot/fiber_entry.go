@@ -313,7 +313,7 @@ func RegisterFiberEntry(opts ...FiberEntryOption) *FiberEntry {
 
 // Bootstrap FiberEntry.
 func (entry *FiberEntry) Bootstrap(ctx context.Context) {
-	event, logger := entry.logBasicInfo("Bootstrap")
+	event, logger := entry.logBasicInfo("Bootstrap", ctx)
 
 	if entry.App == nil {
 		if entry.FiberConfig != nil {
@@ -431,7 +431,7 @@ func (entry *FiberEntry) startServer(event rkquery.Event, logger *zap.Logger) {
 
 // Interrupt FiberEntry.
 func (entry *FiberEntry) Interrupt(ctx context.Context) {
-	event, logger := entry.logBasicInfo("Interrupt")
+	event, logger := entry.logBasicInfo("Interrupt", ctx)
 
 	if entry.IsSwEnabled() {
 		// Interrupt swagger entry
@@ -632,14 +632,23 @@ func (entry *FiberEntry) isInterceptor(r *fiber.Route) bool {
 }
 
 // Add basic fields into event.
-func (entry *FiberEntry) logBasicInfo(operation string) (rkquery.Event, *zap.Logger) {
+func (entry *FiberEntry) logBasicInfo(operation string, ctx context.Context) (rkquery.Event, *zap.Logger) {
 	event := entry.EventLoggerEntry.GetEventHelper().Start(
 		operation,
 		rkquery.WithEntryName(entry.GetName()),
 		rkquery.WithEntryType(entry.GetType()))
+
+	// extract eventId if exists
+	if val := ctx.Value("eventId"); val != nil {
+		if id, ok := val.(string); ok {
+			event.SetEventId(id)
+		}
+	}
+
 	logger := entry.ZapLoggerEntry.GetLogger().With(
 		zap.String("eventId", event.GetEventId()),
-		zap.String("entryName", entry.EntryName))
+		zap.String("entryName", entry.EntryName),
+		zap.String("entryType", entry.EntryType))
 
 	// add FiberEntry info
 	event.AddPayloads(
