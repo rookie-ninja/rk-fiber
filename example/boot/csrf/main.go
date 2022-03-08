@@ -6,19 +6,23 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rookie-ninja/rk-entry/entry"
+	"github.com/rookie-ninja/rk-entry/v2/entry"
 	"github.com/rookie-ninja/rk-fiber/boot"
-	"github.com/rookie-ninja/rk-fiber/interceptor/context"
+	"github.com/rookie-ninja/rk-fiber/middleware/context"
 )
 
-func main() {
-	// Bootstrap basic entries from boot config.
-	rkentry.RegisterInternalEntriesFromConfig("example/boot/csrf/boot.yaml")
+//go:embed boot.yaml
+var boot []byte
 
-	// Bootstrap fiber entry from boot config
-	res := rkfiber.RegisterFiberEntriesWithConfig("example/boot/csrf/boot.yaml")
+func main() {
+	// Bootstrap preload entries
+	rkentry.BootstrapPreloadEntryYAML(boot)
+
+	// Bootstrap gin entry from boot config
+	res := rkfiber.RegisterFiberEntryYAML(boot)
 
 	// Bootstrap echo entry
 	res["greeter"].Bootstrap(context.Background())

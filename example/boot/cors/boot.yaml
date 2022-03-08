@@ -5,8 +5,8 @@ fiber:
     enabled: true                     # Required
     commonService:
       enabled: true                   # Optional, default: false
-    interceptors:
-      loggingZap:
+    middleware:
+      logging:
         enabled: true                 # Optional, default: false
       meta:
         enabled: true                 # Optional, default: false

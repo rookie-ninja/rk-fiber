@@ -6,18 +6,46 @@ package main
 
 import (
 	"context"
+	"embed"
+	_ "embed"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
-	"github.com/rookie-ninja/rk-entry/entry"
+	"github.com/rookie-ninja/rk-entry/v2/entry"
 	"github.com/rookie-ninja/rk-fiber/boot"
 	"net/http"
 )
 
-func main() {
-	// Bootstrap basic entries from boot config.
-	rkentry.RegisterInternalEntriesFromConfig("example/boot/simple/boot.yaml")
+// How to use embed.FS for:
+//
+// - boot.yaml
+// - rkentry.DocsEntryType
+// - rkentry.SWEntryType
+// - rkentry.StaticFileHandlerEntryType
+// - rkentry.CertEntry
+//
+// If we use embed.FS, then we only need one single binary file while packing.
+// We suggest use embed.FS to pack swagger local file since rk-entry would use os.Getwd() to look for files
+// if relative path was provided.
+//
+//go:embed docs
+var docsFS embed.FS
 
-	// Bootstrap fiber entry from boot config
-	res := rkfiber.RegisterFiberEntriesWithConfig("example/boot/simple/boot.yaml")
+func init() {
+	rkentry.GlobalAppCtx.AddEmbedFS(rkentry.SWEntryType, "greeter", &docsFS)
+}
+
+//go:embed boot.yaml
+var boot []byte
+
+// @title RK Swagger for Mux
+// @version 1.0
+// @description This is a greeter service with rk-boot.
+func main() {
+	// Bootstrap preload entries
+	rkentry.BootstrapPreloadEntryYAML(boot)
+
+	// Bootstrap gin entry from boot config
+	res := rkfiber.RegisterFiberEntryYAML(boot)
 
 	// Get rkfiber.FiberEntry
 	fiberEntry := res["greeter"].(*rkfiber.FiberEntry)
@@ -26,12 +54,7 @@ func main() {
 	fiberEntry.Bootstrap(context.Background())
 
 	// Routes must be registered after Bootstrap()
-	fiberEntry.App.Get("/v1/greeter", func(ctx *fiber.Ctx) error {
-		ctx.Response().SetStatusCode(http.StatusOK)
-		return ctx.JSON(map[string]string{
-			"message": "Hello!",
-		})
-	})
+	fiberEntry.App.Get("/v1/greeter", Greeter)
 	// This is required!!!
 	fiberEntry.RefreshFiberRoutes()
 
@@ -40,4 +63,23 @@ func main() {
 
 	// Interrupt fiber entry
 	fiberEntry.Interrupt(context.Background())
+}
+
+// Greeter handler
+// @Summary Greeter service
+// @Id 1
+// @version 1.0
+// @produce application/json
+// @Param name query string true "Input name"
+// @Success 200 {object} GreeterResponse
+// @Router /v1/greeter [get]
+func Greeter(ctx *fiber.Ctx) error {
+	ctx.Response().SetStatusCode(http.StatusOK)
+	return ctx.JSON(&GreeterResponse{
+		Message: fmt.Sprintf("Hello %s!", ctx.Query("name")),
+	})
+}
+
+type GreeterResponse struct {
+	Message string
 }

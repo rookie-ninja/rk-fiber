@@ -8,139 +8,137 @@ package rkfiber
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rookie-ninja/rk-common/common"
-	"github.com/rookie-ninja/rk-entry/entry"
-	"github.com/rookie-ninja/rk-entry/middleware/auth"
-	"github.com/rookie-ninja/rk-entry/middleware/cors"
-	"github.com/rookie-ninja/rk-entry/middleware/csrf"
-	"github.com/rookie-ninja/rk-entry/middleware/jwt"
-	"github.com/rookie-ninja/rk-entry/middleware/log"
-	"github.com/rookie-ninja/rk-entry/middleware/meta"
-	"github.com/rookie-ninja/rk-entry/middleware/metrics"
-	"github.com/rookie-ninja/rk-entry/middleware/panic"
-	"github.com/rookie-ninja/rk-entry/middleware/ratelimit"
-	"github.com/rookie-ninja/rk-entry/middleware/secure"
-	"github.com/rookie-ninja/rk-entry/middleware/timeout"
-	"github.com/rookie-ninja/rk-entry/middleware/tracing"
-	"github.com/rookie-ninja/rk-fiber/interceptor/auth"
-	rkfiberctx "github.com/rookie-ninja/rk-fiber/interceptor/context"
-	"github.com/rookie-ninja/rk-fiber/interceptor/cors"
-	"github.com/rookie-ninja/rk-fiber/interceptor/csrf"
-	"github.com/rookie-ninja/rk-fiber/interceptor/jwt"
-	"github.com/rookie-ninja/rk-fiber/interceptor/log/zap"
-	"github.com/rookie-ninja/rk-fiber/interceptor/meta"
-	"github.com/rookie-ninja/rk-fiber/interceptor/metrics/prom"
-	"github.com/rookie-ninja/rk-fiber/interceptor/panic"
-	"github.com/rookie-ninja/rk-fiber/interceptor/ratelimit"
-	"github.com/rookie-ninja/rk-fiber/interceptor/secure"
-	"github.com/rookie-ninja/rk-fiber/interceptor/timeout"
-	"github.com/rookie-ninja/rk-fiber/interceptor/tracing/telemetry"
+	"github.com/rookie-ninja/rk-entry/v2/entry"
+	"github.com/rookie-ninja/rk-entry/v2/middleware"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/auth"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/cors"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/csrf"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/jwt"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/log"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/meta"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/panic"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/prom"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/ratelimit"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/secure"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/timeout"
+	"github.com/rookie-ninja/rk-entry/v2/middleware/tracing"
+	"github.com/rookie-ninja/rk-fiber/middleware/auth"
+	"github.com/rookie-ninja/rk-fiber/middleware/cors"
+	"github.com/rookie-ninja/rk-fiber/middleware/csrf"
+	"github.com/rookie-ninja/rk-fiber/middleware/jwt"
+	"github.com/rookie-ninja/rk-fiber/middleware/log"
+	"github.com/rookie-ninja/rk-fiber/middleware/meta"
+	"github.com/rookie-ninja/rk-fiber/middleware/panic"
+	rkfiberprom "github.com/rookie-ninja/rk-fiber/middleware/prom"
+	"github.com/rookie-ninja/rk-fiber/middleware/ratelimit"
+	"github.com/rookie-ninja/rk-fiber/middleware/secure"
+	"github.com/rookie-ninja/rk-fiber/middleware/timeout"
+	"github.com/rookie-ninja/rk-fiber/middleware/tracing"
 	"github.com/rookie-ninja/rk-query"
 	"go.uber.org/zap"
+	"net"
 	"net/http"
 	"path"
-	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
 	// FiberEntryType type of entry
-	FiberEntryType = "Fiber"
-	// FiberEntryDescription description of entry
-	FiberEntryDescription = "Internal RK entry which helps to bootstrap with fiber framework."
+	FiberEntryType = "FiberEntry"
 )
 
 // This must be declared in order to register registration function into rk context
 // otherwise, rk-boot won't able to bootstrap fiber entry automatically from boot config file
 func init() {
-	rkentry.RegisterEntryRegFunc(RegisterFiberEntriesWithConfig)
+	rkentry.RegisterEntryRegFunc(RegisterFiberEntryYAML)
 }
 
-// BootConfig boot config which is for fiber entry.
-type BootConfig struct {
+// BootFiber boot config which is for fiber entry.
+type BootFiber struct {
 	Fiber []struct {
-		Enabled       bool                            `yaml:"enabled" json:"enabled"`
-		Name          string                          `yaml:"name" json:"name"`
-		Port          uint64                          `yaml:"port" json:"port"`
-		Description   string                          `yaml:"description" json:"description"`
-		CertEntry     string                          `yaml:"certEntry" json:"certEntry"`
-		SW            rkentry.BootConfigSw            `yaml:"sw" json:"sw"`
-		CommonService rkentry.BootConfigCommonService `yaml:"commonService" json:"commonService"`
-		TV            rkentry.BootConfigTv            `yaml:"tv" json:"tv"`
-		Prom          rkentry.BootConfigProm          `yaml:"prom" json:"prom"`
-		Static        rkentry.BootConfigStaticHandler `yaml:"static" json:"static"`
-		Interceptors  struct {
-			LoggingZap       rkmidlog.BootConfig     `yaml:"loggingZap" json:"loggingZap"`
-			MetricsProm      rkmidmetrics.BootConfig `yaml:"metricsProm" json:"metricsProm"`
-			Auth             rkmidauth.BootConfig    `yaml:"auth" json:"auth"`
-			Cors             rkmidcors.BootConfig    `yaml:"cors" json:"cors"`
-			Meta             rkmidmeta.BootConfig    `yaml:"meta" json:"meta"`
-			Jwt              rkmidjwt.BootConfig     `yaml:"jwt" json:"jwt"`
-			Secure           rkmidsec.BootConfig     `yaml:"secure" json:"secure"`
-			Csrf             rkmidcsrf.BootConfig    `yaml:"csrf" yaml:"csrf"`
-			RateLimit        rkmidlimit.BootConfig   `yaml:"rateLimit" json:"rateLimit"`
-			Timeout          rkmidtimeout.BootConfig `yaml:"timeout" json:"timeout"`
-			TracingTelemetry rkmidtrace.BootConfig   `yaml:"tracingTelemetry" json:"tracingTelemetry"`
-		} `yaml:"interceptors" json:"interceptors"`
-		Logger struct {
-			ZapLogger   string `yaml:"zapLogger" json:"zapLogger"`
-			EventLogger string `yaml:"eventLogger" json:"eventLogger"`
-		} `yaml:"logger" json:"logger"`
+		Enabled       bool                          `yaml:"enabled" json:"enabled"`
+		Name          string                        `yaml:"name" json:"name"`
+		Port          uint64                        `yaml:"port" json:"port"`
+		Description   string                        `yaml:"description" json:"description"`
+		CertEntry     string                        `yaml:"certEntry" json:"certEntry"`
+		LoggerEntry   string                        `yaml:"loggerEntry" json:"loggerEntry"`
+		EventEntry    string                        `yaml:"eventEntry" json:"eventEntry"`
+		SW            rkentry.BootSW                `yaml:"sw" json:"sw"`
+		Docs          rkentry.BootDocs              `yaml:"docs" json:"docs"`
+		CommonService rkentry.BootCommonService     `yaml:"commonService" json:"commonService"`
+		Prom          rkentry.BootProm              `yaml:"prom" json:"prom"`
+		Static        rkentry.BootStaticFileHandler `yaml:"static" json:"static"`
+		Middleware    struct {
+			Ignore    []string                `yaml:"ignore" json:"ignore"`
+			Logging   rkmidlog.BootConfig     `yaml:"logging" json:"logging"`
+			Prom      rkmidprom.BootConfig    `yaml:"prom" json:"prom"`
+			Auth      rkmidauth.BootConfig    `yaml:"auth" json:"auth"`
+			Cors      rkmidcors.BootConfig    `yaml:"cors" json:"cors"`
+			Meta      rkmidmeta.BootConfig    `yaml:"meta" json:"meta"`
+			Jwt       rkmidjwt.BootConfig     `yaml:"jwt" json:"jwt"`
+			Secure    rkmidsec.BootConfig     `yaml:"secure" json:"secure"`
+			Csrf      rkmidcsrf.BootConfig    `yaml:"csrf" yaml:"csrf"`
+			RateLimit rkmidlimit.BootConfig   `yaml:"rateLimit" json:"rateLimit"`
+			Timeout   rkmidtimeout.BootConfig `yaml:"timeout" json:"timeout"`
+			Trace     rkmidtrace.BootConfig   `yaml:"trace" json:"trace"`
+		} `yaml:"middleware" json:"middleware"`
 	} `yaml:"fiber" json:"fiber"`
 }
 
 // FiberEntry implements rkentry.Entry interface.
 type FiberEntry struct {
-	EntryName          string                          `json:"entryName" yaml:"entryName"`
-	EntryType          string                          `json:"entryType" yaml:"entryType"`
-	EntryDescription   string                          `json:"-" yaml:"-"`
-	ZapLoggerEntry     *rkentry.ZapLoggerEntry         `json:"-" yaml:"-"`
-	EventLoggerEntry   *rkentry.EventLoggerEntry       `json:"-" yaml:"-"`
-	Port               uint64                          `json:"port" yaml:"port"`
+	entryName          string                          `json:"-" yaml:"-"`
+	entryType          string                          `json:"-" yaml:"-"`
+	entryDescription   string                          `json:"-" yaml:"-"`
+	LoggerEntry        *rkentry.LoggerEntry            `json:"-" yaml:"-"`
+	EventEntry         *rkentry.EventEntry             `json:"-" yaml:"-"`
 	CertEntry          *rkentry.CertEntry              `json:"-" yaml:"-"`
-	SwEntry            *rkentry.SwEntry                `json:"-" yaml:"-"`
+	Port               uint64                          `json:"-" yaml:"-"`
+	SwEntry            *rkentry.SWEntry                `json:"-" yaml:"-"`
 	CommonServiceEntry *rkentry.CommonServiceEntry     `json:"-" yaml:"-"`
 	App                *fiber.App                      `json:"-" yaml:"-"`
 	FiberConfig        *fiber.Config                   `json:"-" yaml:"-"`
-	Interceptors       []fiber.Handler                 `json:"-" yaml:"-"`
+	Middlewares        []fiber.Handler                 `json:"-" yaml:"-"`
 	PromEntry          *rkentry.PromEntry              `json:"-" yaml:"-"`
 	StaticFileEntry    *rkentry.StaticFileHandlerEntry `json:"-" yaml:"-"`
-	TvEntry            *rkentry.TvEntry                `json:"-" yaml:"-"`
+	DocsEntry          *rkentry.DocsEntry              `json:"-" yaml:"-"`
+	bootstrapLogOnce   sync.Once                       `json:"-" yaml:"-"`
 }
 
-// RegisterFiberEntriesWithConfig register fiber entries with provided config file (Must YAML file).
+// RegisterFiberEntryYAML register fiber entries with provided config file (Must YAML file).
 //
 // Currently, support two ways to provide config file path.
 // 1: With function parameters
-// 2: With command line flag "--rkboot" described in rkcommon.BootConfigPathFlagKey (Will override function parameter if exists)
+// 2: With command line flag "--rkboot" described in rkentry.BootConfigPathFlagKey (Will override function parameter if exists)
 // Command line flag has high priority which would override function parameter
 //
 // Error handling:
-// Process will shutdown if any errors occur with rkcommon.ShutdownWithError function
+// Process will shutdown if any errors occur with rkentry.ShutdownWithError function
 //
 // Override elements in config file:
 // We learned from HELM source code which would override elements in YAML file with "--set" flag followed with comma
 // separated key/value pairs.
 //
-// We are using "--rkset" described in rkcommon.BootConfigOverrideKey in order to distinguish with user flags
+// We are using "--rkset" described in rkentry.BootConfigOverrideKey in order to distinguish with user flags
 // Example of common usage: ./binary_file --rkset "key1=val1,key2=val2"
 // Example of nested map:   ./binary_file --rkset "outer.inner.key=val"
 // Example of slice:        ./binary_file --rkset "outer[0].key=val"
-func RegisterFiberEntriesWithConfig(configFilePath string) map[string]rkentry.Entry {
+func RegisterFiberEntryYAML(raw []byte) map[string]rkentry.Entry {
 	res := make(map[string]rkentry.Entry)
 
 	// 1: Decode config map into boot config struct
-	config := &BootConfig{}
-	rkcommon.UnmarshalBootConfig(configFilePath, config)
+	config := &BootFiber{}
+	rkentry.UnmarshalBootYAML(raw, config)
 
 	// 2: Init fiber entries with boot config
 	for i := range config.Fiber {
@@ -151,122 +149,127 @@ func RegisterFiberEntriesWithConfig(configFilePath string) map[string]rkentry.En
 
 		name := element.Name
 
-		zapLoggerEntry := rkentry.GlobalAppCtx.GetZapLoggerEntry(element.Logger.ZapLogger)
-		if zapLoggerEntry == nil {
-			zapLoggerEntry = rkentry.GlobalAppCtx.GetZapLoggerEntryDefault()
+		// logger entry
+		loggerEntry := rkentry.GlobalAppCtx.GetLoggerEntry(element.LoggerEntry)
+		if loggerEntry == nil {
+			loggerEntry = rkentry.LoggerEntryStdout
 		}
 
-		eventLoggerEntry := rkentry.GlobalAppCtx.GetEventLoggerEntry(element.Logger.EventLogger)
-		if eventLoggerEntry == nil {
-			eventLoggerEntry = rkentry.GlobalAppCtx.GetEventLoggerEntryDefault()
+		// event entry
+		eventEntry := rkentry.GlobalAppCtx.GetEventEntry(element.EventEntry)
+		if eventEntry == nil {
+			eventEntry = rkentry.EventEntryStdout
 		}
+
+		// cert entry
+		certEntry := rkentry.GlobalAppCtx.GetCertEntry(element.CertEntry)
 
 		// Register swagger entry
-		swEntry := rkentry.RegisterSwEntryWithConfig(&element.SW, element.Name, element.Port,
-			zapLoggerEntry, eventLoggerEntry, element.CommonService.Enabled)
+		swEntry := rkentry.RegisterSWEntry(&element.SW, rkentry.WithNameSWEntry(element.Name))
+
+		// Register docs entry
+		docsEntry := rkentry.RegisterDocsEntry(&element.Docs, rkentry.WithNameDocsEntry(element.Name))
 
 		// Register prometheus entry
 		promRegistry := prometheus.NewRegistry()
-		promEntry := rkentry.RegisterPromEntryWithConfig(&element.Prom, element.Name, element.Port,
-			zapLoggerEntry, eventLoggerEntry, promRegistry)
+		promEntry := rkentry.RegisterPromEntry(&element.Prom, rkentry.WithRegistryPromEntry(promRegistry))
 
 		// Register common service entry
-		commonServiceEntry := rkentry.RegisterCommonServiceEntryWithConfig(&element.CommonService, element.Name,
-			zapLoggerEntry, eventLoggerEntry)
-
-		// Register TV entry
-		tvEntry := rkentry.RegisterTvEntryWithConfig(&element.TV, element.Name,
-			zapLoggerEntry, eventLoggerEntry)
+		commonServiceEntry := rkentry.RegisterCommonServiceEntry(&element.CommonService)
 
 		// Register static file handler
-		staticEntry := rkentry.RegisterStaticFileHandlerEntryWithConfig(&element.Static, element.Name,
-			zapLoggerEntry, eventLoggerEntry)
+		staticEntry := rkentry.RegisterStaticFileHandlerEntry(&element.Static, rkentry.WithNameStaticFileHandlerEntry(element.Name))
 
 		inters := make([]fiber.Handler, 0)
 
+		// add global path ignorance
+		rkmid.AddPathToIgnoreGlobal(element.Middleware.Ignore...)
+
 		// logging middlewares
-		if element.Interceptors.LoggingZap.Enabled {
-			inters = append(inters, rkfiberlog.Interceptor(
-				rkmidlog.ToOptions(&element.Interceptors.LoggingZap, element.Name, FiberEntryType,
-					zapLoggerEntry, eventLoggerEntry)...))
+		if element.Middleware.Logging.Enabled {
+			inters = append(inters, rkfiberlog.Middleware(
+				rkmidlog.ToOptions(&element.Middleware.Logging, element.Name, FiberEntryType,
+					loggerEntry, eventEntry)...))
 		}
 
+		// insert panic interceptor
+		inters = append(inters, rkfiberpanic.Middleware(
+			rkmidpanic.WithEntryNameAndType(element.Name, FiberEntryType)))
+
 		// metrics middleware
-		if element.Interceptors.MetricsProm.Enabled {
-			inters = append(inters, rkfibermetrics.Interceptor(
-				rkmidmetrics.ToOptions(&element.Interceptors.MetricsProm, element.Name, FiberEntryType,
-					promRegistry, rkmidmetrics.LabelerTypeHttp)...))
+		if element.Middleware.Prom.Enabled {
+			inters = append(inters, rkfiberprom.Middleware(
+				rkmidprom.ToOptions(&element.Middleware.Prom, element.Name, FiberEntryType,
+					promRegistry, rkmidprom.LabelerTypeHttp)...))
 		}
 
 		// tracing middleware
-		if element.Interceptors.TracingTelemetry.Enabled {
-			inters = append(inters, rkfibertrace.Interceptor(
-				rkmidtrace.ToOptions(&element.Interceptors.TracingTelemetry, element.Name, FiberEntryType)...))
+		if element.Middleware.Trace.Enabled {
+			inters = append(inters, rkfibertrace.Middleware(
+				rkmidtrace.ToOptions(&element.Middleware.Trace, element.Name, FiberEntryType)...))
 		}
 
 		// jwt middleware
-		if element.Interceptors.Jwt.Enabled {
-			inters = append(inters, rkfiberjwt.Interceptor(
-				rkmidjwt.ToOptions(&element.Interceptors.Jwt, element.Name, FiberEntryType)...))
+		if element.Middleware.Jwt.Enabled {
+			inters = append(inters, rkfiberjwt.Middleware(
+				rkmidjwt.ToOptions(&element.Middleware.Jwt, element.Name, FiberEntryType)...))
 		}
 
 		// secure middleware
-		if element.Interceptors.Secure.Enabled {
-			inters = append(inters, rkfibersec.Interceptor(
-				rkmidsec.ToOptions(&element.Interceptors.Secure, element.Name, FiberEntryType)...))
+		if element.Middleware.Secure.Enabled {
+			inters = append(inters, rkfibersec.Middleware(
+				rkmidsec.ToOptions(&element.Middleware.Secure, element.Name, FiberEntryType)...))
 		}
 
 		// csrf middleware
-		if element.Interceptors.Csrf.Enabled {
-			inters = append(inters, rkfibercsrf.Interceptor(
-				rkmidcsrf.ToOptions(&element.Interceptors.Csrf, element.Name, FiberEntryType)...))
+		if element.Middleware.Csrf.Enabled {
+			inters = append(inters, rkfibercsrf.Middleware(
+				rkmidcsrf.ToOptions(&element.Middleware.Csrf, element.Name, FiberEntryType)...))
 		}
 
 		// cors middleware
-		if element.Interceptors.Cors.Enabled {
-			inters = append(inters, rkfibercors.Interceptor(
-				rkmidcors.ToOptions(&element.Interceptors.Cors, element.Name, FiberEntryType)...))
+		if element.Middleware.Cors.Enabled {
+			inters = append(inters, rkfibercors.Middleware(
+				rkmidcors.ToOptions(&element.Middleware.Cors, element.Name, FiberEntryType)...))
 		}
 
 		// meta middleware
-		if element.Interceptors.Meta.Enabled {
-			inters = append(inters, rkfibermeta.Interceptor(
-				rkmidmeta.ToOptions(&element.Interceptors.Meta, element.Name, FiberEntryType)...))
+		if element.Middleware.Meta.Enabled {
+			inters = append(inters, rkfibermeta.Middleware(
+				rkmidmeta.ToOptions(&element.Middleware.Meta, element.Name, FiberEntryType)...))
 		}
 
 		// auth middlewares
-		if element.Interceptors.Auth.Enabled {
-			inters = append(inters, rkfiberauth.Interceptor(
-				rkmidauth.ToOptions(&element.Interceptors.Auth, element.Name, FiberEntryType)...))
+		if element.Middleware.Auth.Enabled {
+			inters = append(inters, rkfiberauth.Middleware(
+				rkmidauth.ToOptions(&element.Middleware.Auth, element.Name, FiberEntryType)...))
 		}
 
 		// timeout middlewares
-		if element.Interceptors.Timeout.Enabled {
-			inters = append(inters, rkfibertimeout.Interceptor(
-				rkmidtimeout.ToOptions(&element.Interceptors.Timeout, element.Name, FiberEntryType)...))
+		if element.Middleware.Timeout.Enabled {
+			inters = append(inters, rkfibertimeout.Middleware(
+				rkmidtimeout.ToOptions(&element.Middleware.Timeout, element.Name, FiberEntryType)...))
 		}
 
 		// rate limit middleware
-		if element.Interceptors.RateLimit.Enabled {
-			inters = append(inters, rkfiberlimit.Interceptor(
-				rkmidlimit.ToOptions(&element.Interceptors.RateLimit, element.Name, FiberEntryType)...))
+		if element.Middleware.RateLimit.Enabled {
+			inters = append(inters, rkfiberlimit.Middleware(
+				rkmidlimit.ToOptions(&element.Middleware.RateLimit, element.Name, FiberEntryType)...))
 		}
-
-		certEntry := rkentry.GlobalAppCtx.GetCertEntry(element.CertEntry)
 
 		entry := RegisterFiberEntry(
 			WithName(name),
 			WithDescription(element.Description),
 			WithPort(element.Port),
-			WithZapLoggerEntry(zapLoggerEntry),
-			WithEventLoggerEntry(eventLoggerEntry),
+			WithLoggerEntry(loggerEntry),
+			WithEventEntry(eventEntry),
 			WithCertEntry(certEntry),
 			WithPromEntry(promEntry),
-			WithTvEntry(tvEntry),
+			WithDocsEntry(docsEntry),
 			WithCommonServiceEntry(commonServiceEntry),
 			WithSwEntry(swEntry),
 			WithStaticFileHandlerEntry(staticEntry),
-			WithInterceptors(inters...))
+			WithMiddleware(inters...))
 
 		res[name] = entry
 	}
@@ -277,34 +280,25 @@ func RegisterFiberEntriesWithConfig(configFilePath string) map[string]rkentry.En
 // RegisterFiberEntry register FiberEntry with options.
 func RegisterFiberEntry(opts ...FiberEntryOption) *FiberEntry {
 	entry := &FiberEntry{
-		EntryType:        FiberEntryType,
-		EntryDescription: FiberEntryDescription,
-		Port:             8080,
+		entryType:        FiberEntryType,
+		entryDescription: "Internal RK entry which helps to bootstrap with fiber framework.",
+		Port:             80,
+		LoggerEntry:      rkentry.NewLoggerEntryStdout(),
+		EventEntry:       rkentry.NewEventEntryStdout(),
+		Middlewares:      make([]fiber.Handler, 0),
 	}
 
 	for i := range opts {
 		opts[i](entry)
 	}
 
-	// insert panic interceptor
-	entry.Interceptors = append(entry.Interceptors, rkfiberpanic.Interceptor(
-		rkmidpanic.WithEntryNameAndType(entry.EntryName, entry.EntryType)))
-
-	if entry.ZapLoggerEntry == nil {
-		entry.ZapLoggerEntry = rkentry.GlobalAppCtx.GetZapLoggerEntryDefault()
-	}
-
-	if entry.EventLoggerEntry == nil {
-		entry.EventLoggerEntry = rkentry.GlobalAppCtx.GetEventLoggerEntryDefault()
-	}
-
-	if len(entry.EntryName) < 1 {
-		entry.EntryName = "FiberServer-" + strconv.FormatUint(entry.Port, 10)
+	if len(entry.entryName) < 1 {
+		entry.entryName = "fiber-" + strconv.FormatUint(entry.Port, 10)
 	}
 
 	// add entry name and entry type into loki syncer if enabled
-	entry.ZapLoggerEntry.AddEntryLabelToLokiSyncer(entry)
-	entry.EventLoggerEntry.AddEntryLabelToLokiSyncer(entry)
+	entry.LoggerEntry.AddEntryLabelToLokiSyncer(entry)
+	entry.EventEntry.AddEntryLabelToLokiSyncer(entry)
 
 	rkentry.GlobalAppCtx.AddEntry(entry)
 
@@ -330,14 +324,25 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 	}
 
 	// Default interceptor should be at front
-	for _, v := range entry.Interceptors {
+	for _, v := range entry.Middlewares {
 		entry.App.Use(v)
+	}
+
+	// Is common service enabled?
+	if entry.IsCommonServiceEnabled() {
+		// Register common service path into Router.
+		entry.App.Get(entry.CommonServiceEntry.ReadyPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Ready))
+		entry.App.Get(entry.CommonServiceEntry.GcPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Gc))
+		entry.App.Get(entry.CommonServiceEntry.InfoPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Info))
+		entry.App.Get(entry.CommonServiceEntry.AlivePath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Alive))
+
+		// Bootstrap common service entry.
+		entry.CommonServiceEntry.Bootstrap(ctx)
 	}
 
 	// Is swagger enabled?
 	if entry.IsSwEnabled() {
 		entry.App.Get(path.Join(entry.SwEntry.Path, "*"), adaptor.HTTPHandler(entry.SwEntry.ConfigFileHandler()))
-		entry.App.Get(path.Join(entry.SwEntry.AssetsFilePath, "*"), adaptor.HTTPHandler(entry.SwEntry.AssetsFileHandler()))
 		entry.SwEntry.Bootstrap(ctx)
 	}
 
@@ -364,41 +369,45 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 		entry.PromEntry.Bootstrap(ctx)
 	}
 
-	// Is common service enabled?
-	if entry.IsCommonServiceEnabled() {
-		// Register common service path into Router.
-		entry.App.Get(entry.CommonServiceEntry.HealthyPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Healthy))
-		entry.App.Get(entry.CommonServiceEntry.GcPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Gc))
-		entry.App.Get(entry.CommonServiceEntry.InfoPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Info))
-		entry.App.Get(entry.CommonServiceEntry.ConfigsPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Configs))
-		entry.App.Get(entry.CommonServiceEntry.SysPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Sys))
-		entry.App.Get(entry.CommonServiceEntry.EntriesPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Entries))
-		entry.App.Get(entry.CommonServiceEntry.CertsPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Certs))
-		entry.App.Get(entry.CommonServiceEntry.LogsPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Logs))
-		entry.App.Get(entry.CommonServiceEntry.DepsPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Deps))
-		entry.App.Get(entry.CommonServiceEntry.LicensePath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.License))
-		entry.App.Get(entry.CommonServiceEntry.ReadmePath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Readme))
-		entry.App.Get(entry.CommonServiceEntry.GitPath, adaptor.HTTPHandlerFunc(entry.CommonServiceEntry.Git))
-
-		entry.App.Get(entry.CommonServiceEntry.ApisPath, entry.Apis)
-		entry.App.Get(entry.CommonServiceEntry.ReqPath, entry.Req)
-
-		// Bootstrap common service entry.
-		entry.CommonServiceEntry.Bootstrap(ctx)
-	}
-
-	// Is TV enabled?
-	if entry.IsTvEnabled() {
+	// Is Docs enabled?
+	if entry.IsDocsEnabled() {
 		// Bootstrap TV entry.
-		entry.App.Get(path.Join(entry.TvEntry.BasePath, "*"), entry.TV)
-		entry.App.Get(path.Join(entry.TvEntry.AssetsFilePath, "*"), adaptor.HTTPHandlerFunc(entry.TvEntry.AssetsFileHandler()))
-
-		entry.TvEntry.Bootstrap(ctx)
+		entry.App.Get(path.Join(entry.DocsEntry.Path, "*"), adaptor.HTTPHandlerFunc(entry.DocsEntry.ConfigFileHandler()))
+		entry.DocsEntry.Bootstrap(ctx)
 	}
 
 	go entry.startServer(event, logger)
 
-	entry.EventLoggerEntry.GetEventHelper().Finish(event)
+	entry.bootstrapLogOnce.Do(func() {
+		// Print link and logging message
+		scheme := "http"
+		if entry.IsTlsEnabled() {
+			scheme = "https"
+		}
+
+		if entry.IsSwEnabled() {
+			entry.LoggerEntry.Info(fmt.Sprintf("SwaggerEntry: %s://localhost:%d%s", scheme, entry.Port, entry.SwEntry.Path))
+		}
+		if entry.IsDocsEnabled() {
+			entry.LoggerEntry.Info(fmt.Sprintf("DocsEntry: %s://localhost:%d%s", scheme, entry.Port, entry.DocsEntry.Path))
+		}
+		if entry.IsPromEnabled() {
+			entry.LoggerEntry.Info(fmt.Sprintf("PromEntry: %s://localhost:%d%s", scheme, entry.Port, entry.PromEntry.Path))
+		}
+		if entry.IsStaticFileHandlerEnabled() {
+			entry.LoggerEntry.Info(fmt.Sprintf("StaticFileHandlerEntry: %s://localhost:%d%s", scheme, entry.Port, entry.StaticFileEntry.Path))
+		}
+		if entry.IsCommonServiceEnabled() {
+			handlers := []string{
+				fmt.Sprintf("%s://localhost:%d%s", scheme, entry.Port, entry.CommonServiceEntry.ReadyPath),
+				fmt.Sprintf("%s://localhost:%d%s", scheme, entry.Port, entry.CommonServiceEntry.AlivePath),
+				fmt.Sprintf("%s://localhost:%d%s", scheme, entry.Port, entry.CommonServiceEntry.InfoPath),
+			}
+
+			entry.LoggerEntry.Info(fmt.Sprintf("CommonSreviceEntry: %s", strings.Join(handlers, ", ")))
+		}
+		entry.EventEntry.Finish(event)
+	})
 }
 
 // Start server
@@ -407,15 +416,21 @@ func (entry *FiberEntry) startServer(event rkquery.Event, logger *zap.Logger) {
 	if entry.App != nil {
 		// If TLS was enabled, we need to load server certificate and key and start http server with ListenAndServeTLS()
 		if entry.IsTlsEnabled() {
-			err := entry.App.Server().ListenAndServeTLSEmbed(
-				":"+strconv.FormatUint(entry.Port, 10),
-				entry.CertEntry.Store.ServerCert,
-				entry.CertEntry.Store.ServerKey)
+			conn, err := net.Listen("tcp4", ":"+strconv.FormatUint(entry.Port, 10))
+			if err != nil && err != http.ErrServerClosed {
+				event.AddErr(err)
+				logger.Error("Error occurs while starting fiber server with tls.", event.ListPayloads()...)
+				rkentry.ShutdownWithError(err)
+			}
+
+			err = entry.App.Server().Serve(tls.NewListener(conn, &tls.Config{
+				Certificates: []tls.Certificate{*entry.CertEntry.Certificate},
+			}))
 
 			if err != nil && err != http.ErrServerClosed {
 				event.AddErr(err)
 				logger.Error("Error occurs while starting fiber server with tls.", event.ListPayloads()...)
-				rkcommon.ShutdownWithError(err)
+				rkentry.ShutdownWithError(err)
 			}
 		} else {
 			err := entry.App.Listen(":" + strconv.FormatUint(entry.Port, 10))
@@ -423,7 +438,7 @@ func (entry *FiberEntry) startServer(event rkquery.Event, logger *zap.Logger) {
 			if err != nil && err != http.ErrServerClosed {
 				event.AddErr(err)
 				logger.Error("Error occurs while starting fiber server.", event.ListPayloads()...)
-				rkcommon.ShutdownWithError(err)
+				rkentry.ShutdownWithError(err)
 			}
 		}
 	}
@@ -434,28 +449,23 @@ func (entry *FiberEntry) Interrupt(ctx context.Context) {
 	event, logger := entry.logBasicInfo("Interrupt", ctx)
 
 	if entry.IsSwEnabled() {
-		// Interrupt swagger entry
 		entry.SwEntry.Interrupt(ctx)
 	}
 
 	if entry.IsStaticFileHandlerEnabled() {
-		// Interrupt entry
 		entry.StaticFileEntry.Interrupt(ctx)
 	}
 
 	if entry.IsPromEnabled() {
-		// Interrupt prometheus entry
 		entry.PromEntry.Interrupt(ctx)
 	}
 
 	if entry.IsCommonServiceEnabled() {
-		// Interrupt common service entry
 		entry.CommonServiceEntry.Interrupt(ctx)
 	}
 
-	if entry.IsTvEnabled() {
-		// Interrupt common service entry
-		entry.TvEntry.Interrupt(ctx)
+	if entry.IsDocsEnabled() {
+		entry.DocsEntry.Interrupt(ctx)
 	}
 
 	if entry.App != nil {
@@ -465,22 +475,22 @@ func (entry *FiberEntry) Interrupt(ctx context.Context) {
 		}
 	}
 
-	entry.EventLoggerEntry.GetEventHelper().Finish(event)
+	entry.EventEntry.Finish(event)
 }
 
 // GetName Get entry name.
 func (entry *FiberEntry) GetName() string {
-	return entry.EntryName
+	return entry.entryName
 }
 
 // GetType Get entry type.
 func (entry *FiberEntry) GetType() string {
-	return entry.EntryType
+	return entry.entryType
 }
 
 // GetDescription Get description of entry.
 func (entry *FiberEntry) GetDescription() string {
-	return entry.EntryDescription
+	return entry.entryDescription
 }
 
 // String Stringfy entry.
@@ -494,29 +504,19 @@ func (entry *FiberEntry) String() string {
 // MarshalJSON Marshal entry.
 func (entry *FiberEntry) MarshalJSON() ([]byte, error) {
 	m := map[string]interface{}{
-		"entryName":          entry.EntryName,
-		"entryType":          entry.EntryType,
-		"entryDescription":   entry.EntryDescription,
-		"eventLoggerEntry":   entry.EventLoggerEntry.GetName(),
-		"zapLoggerEntry":     entry.ZapLoggerEntry.GetName(),
-		"port":               entry.Port,
-		"swEntry":            entry.SwEntry,
-		"commonServiceEntry": entry.CommonServiceEntry,
-		"promEntry":          entry.PromEntry,
-		"tvEntry":            entry.TvEntry,
+		"name":                   entry.entryName,
+		"type":                   entry.entryType,
+		"description":            entry.entryDescription,
+		"port":                   entry.Port,
+		"swEntry":                entry.SwEntry,
+		"docsEntry":              entry.DocsEntry,
+		"commonServiceEntry":     entry.CommonServiceEntry,
+		"promEntry":              entry.PromEntry,
+		"staticFileHandlerEntry": entry.StaticFileEntry,
 	}
 
 	if entry.CertEntry != nil {
 		m["certEntry"] = entry.CertEntry.GetName()
-	}
-
-	interceptorsStr := make([]string, 0)
-	m["interceptors"] = &interceptorsStr
-
-	for i := range entry.Interceptors {
-		element := entry.Interceptors[i]
-		interceptorsStr = append(interceptorsStr,
-			path.Base(runtime.FuncForPC(reflect.ValueOf(element).Pointer()).Name()))
 	}
 
 	return json.Marshal(&m)
@@ -531,7 +531,7 @@ func (entry *FiberEntry) UnmarshalJSON([]byte) error {
 
 // GetFiberEntry Get FiberEntry from rkentry.GlobalAppCtx.
 func GetFiberEntry(name string) *FiberEntry {
-	entryRaw := rkentry.GlobalAppCtx.GetEntry(name)
+	entryRaw := rkentry.GlobalAppCtx.GetEntry(FiberEntryType, name)
 	if entryRaw == nil {
 		return nil
 	}
@@ -540,10 +540,10 @@ func GetFiberEntry(name string) *FiberEntry {
 	return entry
 }
 
-// AddInterceptor Add interceptors.
+// AddMiddleware Add middleware.
 // This function should be called before Bootstrap() called.
-func (entry *FiberEntry) AddInterceptor(inters ...fiber.Handler) {
-	entry.Interceptors = append(entry.Interceptors, inters...)
+func (entry *FiberEntry) AddMiddleware(inters ...fiber.Handler) {
+	entry.Middlewares = append(entry.Middlewares, inters...)
 }
 
 // SetFiberConfig override fiber config
@@ -553,7 +553,7 @@ func (entry *FiberEntry) SetFiberConfig(conf *fiber.Config) {
 
 // IsTlsEnabled Is TLS enabled?
 func (entry *FiberEntry) IsTlsEnabled() bool {
-	return entry.CertEntry != nil && entry.CertEntry.Store != nil
+	return entry.CertEntry != nil && entry.CertEntry.Certificate != nil
 }
 
 // IsSwEnabled Is swagger entry enabled?
@@ -566,9 +566,9 @@ func (entry *FiberEntry) IsCommonServiceEnabled() bool {
 	return entry.CommonServiceEntry != nil
 }
 
-// IsTvEnabled Is TV entry enabled?
-func (entry *FiberEntry) IsTvEnabled() bool {
-	return entry.TvEntry != nil
+// IsDocsEnabled Is TV entry enabled?
+func (entry *FiberEntry) IsDocsEnabled() bool {
+	return entry.DocsEntry != nil
 }
 
 // IsPromEnabled Is prometheus entry enabled?
@@ -589,51 +589,9 @@ func (entry *FiberEntry) RefreshFiberRoutes() {
 	entry.App.Handler()
 }
 
-type Route struct {
-	Method string `yaml:"method" json:"method"`
-	Path   string `yaml:"path" json:"path"`
-	Port   uint64 `yaml:"port" json:"port"`
-}
-
-// ListRoutes returns all user routes except interceptors
-func (entry *FiberEntry) ListRoutes() []*Route {
-	res := make([]*Route, 0)
-
-	stacks := entry.App.Stack()
-	for _, i := range stacks {
-		for _, j := range i {
-			if !entry.isInterceptor(j) {
-				res = append(res, &Route{
-					Method: j.Method,
-					Path:   j.Path,
-					Port:   entry.Port,
-				})
-			}
-		}
-	}
-
-	return res
-}
-
-// ***************** Helper function *****************
-
-func (entry *FiberEntry) isInterceptor(r *fiber.Route) bool {
-	for _, i := range entry.Interceptors {
-		pt := reflect.ValueOf(i).Pointer()
-
-		for _, j := range r.Handlers {
-			if pt == reflect.ValueOf(j).Pointer() {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
 // Add basic fields into event.
 func (entry *FiberEntry) logBasicInfo(operation string, ctx context.Context) (rkquery.Event, *zap.Logger) {
-	event := entry.EventLoggerEntry.GetEventHelper().Start(
+	event := entry.EventEntry.Start(
 		operation,
 		rkquery.WithEntryName(entry.GetName()),
 		rkquery.WithEntryType(entry.GetType()))
@@ -645,10 +603,10 @@ func (entry *FiberEntry) logBasicInfo(operation string, ctx context.Context) (rk
 		}
 	}
 
-	logger := entry.ZapLoggerEntry.GetLogger().With(
+	logger := entry.LoggerEntry.With(
 		zap.String("eventId", event.GetEventId()),
-		zap.String("entryName", entry.EntryName),
-		zap.String("entryType", entry.EntryType))
+		zap.String("entryName", entry.entryName),
+		zap.String("entryType", entry.entryType))
 
 	// add FiberEntry info
 	event.AddPayloads(
@@ -668,18 +626,18 @@ func (entry *FiberEntry) logBasicInfo(operation string, ctx context.Context) (rk
 			zap.String("commonServicePathPrefix", "/rk/v1/"))
 	}
 
-	// add TvEntry info
-	if entry.IsTvEnabled() {
+	// add DocsEntry info
+	if entry.IsDocsEnabled() {
 		event.AddPayloads(
-			zap.Bool("tvEnabled", true),
-			zap.String("tvPath", "/rk/v1/tv/"))
+			zap.Bool("docsEnabled", true),
+			zap.String("docsPath", entry.DocsEntry.Path))
 	}
 
 	// add PromEntry info
 	if entry.IsPromEnabled() {
 		event.AddPayloads(
 			zap.Bool("promEnabled", true),
-			zap.Uint64("promPort", entry.PromEntry.Port),
+			zap.Uint64("promPort", entry.Port),
 			zap.String("promPath", entry.PromEntry.Path))
 	}
 
@@ -701,135 +659,6 @@ func (entry *FiberEntry) logBasicInfo(operation string, ctx context.Context) (rk
 	return event, logger
 }
 
-// ***************** Common Service Extension API *****************
-
-// Apis list apis
-func (entry *FiberEntry) Apis(ctx *fiber.Ctx) error {
-	ctx.Response().Header.Set("Access-Control-Allow-Origin", "*")
-
-	ctx.Context().SetStatusCode(http.StatusOK)
-	return ctx.JSON(entry.doApis(ctx))
-}
-
-// Req handler
-func (entry *FiberEntry) Req(ctx *fiber.Ctx) error {
-	ctx.Context().SetStatusCode(http.StatusOK)
-	return ctx.JSON(entry.doReq(ctx))
-}
-
-// TV handler
-func (entry *FiberEntry) TV(ctx *fiber.Ctx) error {
-	logger := rkfiberctx.GetLogger(ctx)
-
-	ctx.Context().SetContentType("text/html; charset=utf-8")
-
-	switch item := ctx.Params("*"); item {
-	case "apis":
-		buf := entry.TvEntry.ExecuteTemplate("apis", entry.doApis(ctx), logger)
-		ctx.Context().SetBodyStream(buf, -1)
-	default:
-		buf := entry.TvEntry.Action(item, logger)
-		ctx.Context().SetBodyStream(buf, -1)
-	}
-
-	return nil
-}
-
-// Construct swagger URL based on IP and scheme
-func (entry *FiberEntry) constructSwUrl(ctx *fiber.Ctx) string {
-	if !entry.IsSwEnabled() {
-		return "N/A"
-	}
-
-	originalURL := fmt.Sprintf("localhost:%d", entry.Port)
-	if ctx != nil && ctx.Request() != nil && len(ctx.Hostname()) > 0 {
-		originalURL = ctx.Hostname()
-	}
-
-	scheme := "http"
-	if ctx != nil && ctx.Request() != nil && ctx.Context().IsTLS() {
-		scheme = "https"
-	}
-
-	return fmt.Sprintf("%s://%s%s", scheme, originalURL, entry.SwEntry.Path)
-}
-
-// Helper function for APIs call
-func (entry *FiberEntry) doApis(ctx *fiber.Ctx) *rkentry.ApisResponse {
-	res := &rkentry.ApisResponse{
-		Entries: make([]*rkentry.ApisResponseElement, 0),
-	}
-
-	routes := entry.ListRoutes()
-	for j := range routes {
-		info := routes[j]
-
-		element := &rkentry.ApisResponseElement{
-			EntryName: entry.GetName(),
-			Method:    info.Method,
-			Path:      info.Path,
-			Port:      entry.Port,
-			SwUrl:     entry.constructSwUrl(ctx),
-		}
-		res.Entries = append(res.Entries, element)
-	}
-
-	return res
-}
-
-// Is metrics from prometheus contains particular api?
-func (entry *FiberEntry) containsMetrics(api string, metrics []*rkentry.ReqMetricsRK) bool {
-	for i := range metrics {
-		if metrics[i].RestPath == api {
-			return true
-		}
-	}
-
-	return false
-}
-
-// Helper function for Req call
-func (entry *FiberEntry) doReq(ctx *fiber.Ctx) *rkentry.ReqResponse {
-	metricsSet := rkmidmetrics.GetServerMetricsSet(entry.GetName())
-	if metricsSet == nil {
-		return &rkentry.ReqResponse{
-			Metrics: make([]*rkentry.ReqMetricsRK, 0),
-		}
-	}
-
-	vector := metricsSet.GetSummary(rkmidmetrics.MetricsNameElapsedNano)
-	if vector == nil {
-		return &rkentry.ReqResponse{
-			Metrics: make([]*rkentry.ReqMetricsRK, 0),
-		}
-	}
-
-	reqMetrics := rkentry.NewPromMetricsInfo(vector)
-
-	// Fill missed metrics
-	apis := make([]string, 0)
-
-	routes := entry.ListRoutes()
-	for j := range routes {
-		info := routes[j]
-		apis = append(apis, info.Path)
-	}
-
-	// Add empty metrics into result
-	for i := range apis {
-		if !entry.containsMetrics(apis[i], reqMetrics) {
-			reqMetrics = append(reqMetrics, &rkentry.ReqMetricsRK{
-				RestPath: apis[i],
-				ResCode:  make([]*rkentry.ResCodeRK, 0),
-			})
-		}
-	}
-
-	return &rkentry.ReqResponse{
-		Metrics: reqMetrics,
-	}
-}
-
 // ***************** Options *****************
 
 // FiberEntryOption Fiber entry option.
@@ -838,14 +667,14 @@ type FiberEntryOption func(*FiberEntry)
 // WithName provide name.
 func WithName(name string) FiberEntryOption {
 	return func(entry *FiberEntry) {
-		entry.EntryName = name
+		entry.entryName = name
 	}
 }
 
 // WithDescription provide name.
 func WithDescription(description string) FiberEntryOption {
 	return func(entry *FiberEntry) {
-		entry.EntryDescription = description
+		entry.entryDescription = description
 	}
 }
 
@@ -856,17 +685,17 @@ func WithPort(port uint64) FiberEntryOption {
 	}
 }
 
-// WithZapLoggerEntry provide rkentry.ZapLoggerEntry.
-func WithZapLoggerEntry(zapLogger *rkentry.ZapLoggerEntry) FiberEntryOption {
+// WithLoggerEntry provide rkentry.LoggerEntry.
+func WithLoggerEntry(zapLogger *rkentry.LoggerEntry) FiberEntryOption {
 	return func(entry *FiberEntry) {
-		entry.ZapLoggerEntry = zapLogger
+		entry.LoggerEntry = zapLogger
 	}
 }
 
-// WithEventLoggerEntry provide rkentry.EventLoggerEntry.
-func WithEventLoggerEntry(eventLogger *rkentry.EventLoggerEntry) FiberEntryOption {
+// WithEventEntry provide rkentry.EventEntry.
+func WithEventEntry(eventLogger *rkentry.EventEntry) FiberEntryOption {
 	return func(entry *FiberEntry) {
-		entry.EventLoggerEntry = eventLogger
+		entry.EventEntry = eventLogger
 	}
 }
 
@@ -878,7 +707,7 @@ func WithCertEntry(certEntry *rkentry.CertEntry) FiberEntryOption {
 }
 
 // WithSwEntry provide SwEntry.
-func WithSwEntry(sw *rkentry.SwEntry) FiberEntryOption {
+func WithSwEntry(sw *rkentry.SWEntry) FiberEntryOption {
 	return func(entry *FiberEntry) {
 		entry.SwEntry = sw
 	}
@@ -891,14 +720,14 @@ func WithCommonServiceEntry(commonServiceEntry *rkentry.CommonServiceEntry) Fibe
 	}
 }
 
-// WithInterceptors provide user interceptors.
-func WithInterceptors(inters ...fiber.Handler) FiberEntryOption {
+// WithMiddleware provide user interceptors.
+func WithMiddleware(inters ...fiber.Handler) FiberEntryOption {
 	return func(entry *FiberEntry) {
-		if entry.Interceptors == nil {
-			entry.Interceptors = make([]fiber.Handler, 0)
+		if entry.Middlewares == nil {
+			entry.Middlewares = make([]fiber.Handler, 0)
 		}
 
-		entry.Interceptors = append(entry.Interceptors, inters...)
+		entry.Middlewares = append(entry.Middlewares, inters...)
 	}
 }
 
@@ -916,10 +745,10 @@ func WithStaticFileHandlerEntry(staticEntry *rkentry.StaticFileHandlerEntry) Fib
 	}
 }
 
-// WithTvEntry provide TvEntry.
-func WithTvEntry(tvEntry *rkentry.TvEntry) FiberEntryOption {
+// WithDocsEntry provide DocsEntry.
+func WithDocsEntry(tvEntry *rkentry.DocsEntry) FiberEntryOption {
 	return func(entry *FiberEntry) {
-		entry.TvEntry = tvEntry
+		entry.DocsEntry = tvEntry
 	}
 }
 

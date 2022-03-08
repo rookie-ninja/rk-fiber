@@ -4,13 +4,13 @@
 
 <h1>CORS Test</h1>
 
-<p>Call http://localhost:8080/rk/v1/healthy</p>
+<p>Call http://localhost:8080/rk/v1/ready</p>
 
 <script type="text/javascript">
     window.onload = function() {
-        var apiUrl = 'http://localhost:8080/rk/v1/healthy';
+        var apiUrl = 'http://localhost:8080/rk/v1/ready';
         fetch(apiUrl).then(response => response.json()).then(data => {
-            document.getElementById("res").innerHTML = data["healthy"]
+            document.getElementById("res").innerHTML = data["ready"]
         }).catch(err => {
             document.getElementById("res").innerHTML = err
         });

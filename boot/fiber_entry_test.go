@@ -13,20 +13,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"github.com/gofiber/fiber/v2"
-	"github.com/prometheus/client_golang/prometheus"
-	rkentry "github.com/rookie-ninja/rk-entry/entry"
-	rkmidmetrics "github.com/rookie-ninja/rk-entry/middleware/metrics"
-	rkfibermeta "github.com/rookie-ninja/rk-fiber/interceptor/meta"
-	rkfibermetrics "github.com/rookie-ninja/rk-fiber/interceptor/metrics/prom"
+	"github.com/rookie-ninja/rk-entry/v2/entry"
+	"github.com/rookie-ninja/rk-fiber/middleware/meta"
 	"github.com/stretchr/testify/assert"
-	"io/ioutil"
 	"math/big"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
-	"path"
 	"strconv"
 	"testing"
 	"time"
@@ -44,16 +36,16 @@ fiber:
      path: "sw"
    commonService:
      enabled: true
-   tv:
+   docs:
      enabled: true
    prom:
      enabled: true
      pusher:
        enabled: false
-   interceptors:
-     loggingZap:
+   middleware:
+     logging:
        enabled: true
-     metricsProm:
+     prom:
        enabled: true
      auth:
        enabled: true
@@ -61,7 +53,7 @@ fiber:
          - "user:pass"
      meta:
        enabled: true
-     tracingTelemetry:
+     trace:
        enabled: true
      ratelimit:
        enabled: true
@@ -75,8 +67,6 @@ fiber:
        enabled: true
      csrf:
        enabled: true
-     gzip:
-       enabled: true
  - name: greeter2
    port: 2008
    enabled: true
@@ -85,12 +75,12 @@ fiber:
      path: "sw"
    commonService:
      enabled: true
-   tv:
+   docs:
      enabled: true
-   interceptors:
-     loggingZap:
+   middleware:
+     logging:
        enabled: true
-     metricsProm:
+     prom:
        enabled: true
      auth:
        enabled: true
@@ -107,10 +97,10 @@ func TestGetFiberEntry(t *testing.T) {
 	assert.Nil(t, GetFiberEntry("entry-name"))
 
 	// happy case
-	echoEntry := RegisterFiberEntry(WithName("ut"))
-	assert.Equal(t, echoEntry, GetFiberEntry("ut"))
+	fiberEntry := RegisterFiberEntry(WithName("ut"))
+	assert.Equal(t, fiberEntry, GetFiberEntry("ut"))
 
-	rkentry.GlobalAppCtx.RemoveEntry("ut")
+	rkentry.GlobalAppCtx.RemoveEntry(fiberEntry)
 }
 
 func TestRegisterFiberEntry(t *testing.T) {
@@ -121,21 +111,40 @@ func TestRegisterFiberEntry(t *testing.T) {
 	assert.NotEmpty(t, entry.GetType())
 	assert.NotEmpty(t, entry.GetDescription())
 	assert.NotEmpty(t, entry.String())
-	rkentry.GlobalAppCtx.RemoveEntry(entry.GetName())
+	rkentry.GlobalAppCtx.RemoveEntry(entry)
 
 	// with options
+	commonServiceEntry := rkentry.RegisterCommonServiceEntry(&rkentry.BootCommonService{
+		Enabled: true,
+	})
+	staticEntry := rkentry.RegisterStaticFileHandlerEntry(&rkentry.BootStaticFileHandler{
+		Enabled: true,
+	})
+	certEntry := rkentry.RegisterCertEntry(&rkentry.BootCert{
+		Cert: []*rkentry.BootCertE{
+			{
+				Name: "ut-cert",
+			},
+		},
+	})
+	swEntry := rkentry.RegisterSWEntry(&rkentry.BootSW{
+		Enabled: true,
+	})
+	promEntry := rkentry.RegisterPromEntry(&rkentry.BootProm{
+		Enabled: true,
+	})
+
 	entry = RegisterFiberEntry(
-		WithZapLoggerEntry(nil),
-		WithEventLoggerEntry(nil),
-		WithCommonServiceEntry(rkentry.RegisterCommonServiceEntry()),
-		WithTvEntry(rkentry.RegisterTvEntry()),
-		WithStaticFileHandlerEntry(rkentry.RegisterStaticFileHandlerEntry()),
-		WithCertEntry(rkentry.RegisterCertEntry()),
-		WithSwEntry(rkentry.RegisterSwEntry()),
+		WithLoggerEntry(rkentry.LoggerEntryNoop),
+		WithEventEntry(rkentry.EventEntryNoop),
+		WithCommonServiceEntry(commonServiceEntry),
+		WithStaticFileHandlerEntry(staticEntry),
+		WithCertEntry(certEntry[0]),
+		WithSwEntry(swEntry),
 		WithPort(8080),
 		WithName("ut-entry"),
 		WithDescription("ut-desc"),
-		WithPromEntry(rkentry.RegisterPromEntry()))
+		WithPromEntry(promEntry))
 
 	assert.NotEmpty(t, entry.GetName())
 	assert.NotEmpty(t, entry.GetType())
@@ -145,8 +154,8 @@ func TestRegisterFiberEntry(t *testing.T) {
 	assert.True(t, entry.IsStaticFileHandlerEnabled())
 	assert.True(t, entry.IsPromEnabled())
 	assert.True(t, entry.IsCommonServiceEnabled())
-	assert.True(t, entry.IsTvEnabled())
-	assert.True(t, entry.IsTlsEnabled())
+	assert.False(t, entry.IsDocsEnabled())
+	assert.False(t, entry.IsTlsEnabled())
 
 	bytes, err := entry.MarshalJSON()
 	assert.NotEmpty(t, bytes)
@@ -154,11 +163,11 @@ func TestRegisterFiberEntry(t *testing.T) {
 	assert.Nil(t, entry.UnmarshalJSON([]byte{}))
 }
 
-func TestFiberEntry_AddInterceptor(t *testing.T) {
+func TestFiberEntry_AddMiddleware(t *testing.T) {
 	defer assertNotPanic(t)
 	entry := RegisterFiberEntry()
-	inter := rkfibermeta.Interceptor()
-	entry.AddInterceptor(inter)
+	inter := rkfibermeta.Middleware()
+	entry.AddMiddleware(inter)
 }
 
 func TestFiberEntry_Bootstrap(t *testing.T) {
@@ -168,26 +177,40 @@ func TestFiberEntry_Bootstrap(t *testing.T) {
 	entry := RegisterFiberEntry(WithPort(8080))
 	entry.Bootstrap(context.TODO())
 	validateServerIsUp(t, 8080, entry.IsTlsEnabled())
-	assert.Empty(t, entry.ListRoutes())
 
 	entry.Interrupt(context.TODO())
 	time.Sleep(time.Second)
 
 	// with enable sw, static, prom, common, tv, tls
-	certEntry := rkentry.RegisterCertEntry()
-	certEntry.Store.ServerCert, certEntry.Store.ServerKey = generateCerts()
+	commonServiceEntry := rkentry.RegisterCommonServiceEntry(&rkentry.BootCommonService{
+		Enabled: true,
+	})
+	staticEntry := rkentry.RegisterStaticFileHandlerEntry(&rkentry.BootStaticFileHandler{
+		Enabled: true,
+	})
+	certEntry := rkentry.RegisterCertEntry(&rkentry.BootCert{
+		Cert: []*rkentry.BootCertE{
+			{
+				Name: "ut-cert",
+			},
+		},
+	})
+	swEntry := rkentry.RegisterSWEntry(&rkentry.BootSW{
+		Enabled: true,
+	})
+	promEntry := rkentry.RegisterPromEntry(&rkentry.BootProm{
+		Enabled: true,
+	})
 
 	entry = RegisterFiberEntry(
 		WithPort(8081),
-		WithCommonServiceEntry(rkentry.RegisterCommonServiceEntry()),
-		WithTvEntry(rkentry.RegisterTvEntry()),
-		WithStaticFileHandlerEntry(rkentry.RegisterStaticFileHandlerEntry()),
-		WithCertEntry(certEntry),
-		WithSwEntry(rkentry.RegisterSwEntry()),
-		WithPromEntry(rkentry.RegisterPromEntry()))
+		WithCommonServiceEntry(commonServiceEntry),
+		WithStaticFileHandlerEntry(staticEntry),
+		WithCertEntry(certEntry[0]),
+		WithSwEntry(swEntry),
+		WithPromEntry(promEntry))
 	entry.Bootstrap(context.TODO())
 	validateServerIsUp(t, 8081, entry.IsTlsEnabled())
-	assert.NotEmpty(t, entry.ListRoutes())
 
 	entry.Interrupt(context.TODO())
 	time.Sleep(time.Second)
@@ -198,19 +221,17 @@ func TestFiberEntry_startServer_ServerFail(t *testing.T) {
 	entry := RegisterFiberEntry(
 		WithPort(808080))
 
-	event := rkentry.NoopEventLoggerEntry().GetEventFactory().CreateEventNoop()
-	logger := rkentry.NoopZapLoggerEntry().GetLogger()
+	event := rkentry.EventEntryNoop.CreateEventNoop()
+	logger := rkentry.LoggerEntryNoop.Logger
 
 	entry.startServer(event, logger)
 }
 
-func TestRegisterFiberEntriesWithConfig(t *testing.T) {
+func TestRegisterFiberEntryYAML(t *testing.T) {
 	assertNotPanic(t)
 
 	// write config file in unit test temp directory
-	tempDir := path.Join(t.TempDir(), "boot.yaml")
-	assert.Nil(t, ioutil.WriteFile(tempDir, []byte(defaultBootConfigStr), os.ModePerm))
-	entries := RegisterFiberEntriesWithConfig(tempDir)
+	entries := RegisterFiberEntryYAML([]byte(defaultBootConfigStr))
 	assert.NotNil(t, entries)
 	assert.Len(t, entries, 2)
 
@@ -223,79 +244,6 @@ func TestRegisterFiberEntriesWithConfig(t *testing.T) {
 
 	greeter3 := entries["greeter3"]
 	assert.Nil(t, greeter3)
-}
-
-func TestFiberEntry_Apis(t *testing.T) {
-	entry := RegisterFiberEntry()
-
-	app := fiber.New()
-	app.Get("/apis", entry.Apis)
-	entry.App = app
-
-	req := httptest.NewRequest(http.MethodGet, "/apis", nil)
-	resp, err := app.Test(req)
-	assert.Nil(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-}
-
-func TestFiberEntry_Req_HappyCase(t *testing.T) {
-	defer assertNotPanic(t)
-
-	entry := RegisterFiberEntry(
-		WithCommonServiceEntry(rkentry.RegisterCommonServiceEntry()),
-		WithPort(8082),
-		WithName("ut"))
-
-	entry.AddInterceptor(rkfibermetrics.Interceptor(
-		rkmidmetrics.WithEntryNameAndType("ut", "Fiber"),
-		rkmidmetrics.WithRegisterer(prometheus.NewRegistry())))
-
-	app := fiber.New()
-	app.Get("/req", entry.Req)
-	entry.App = app
-
-	entry.Bootstrap(context.TODO())
-
-	req := httptest.NewRequest(http.MethodGet, "/req", nil)
-	resp, err := app.Test(req)
-	assert.Nil(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	entry.Interrupt(context.TODO())
-	time.Sleep(time.Second)
-}
-
-func TestFiberEntry_TV(t *testing.T) {
-	defer assertNotPanic(t)
-
-	entry := RegisterFiberEntry(
-		WithCommonServiceEntry(rkentry.RegisterCommonServiceEntry()),
-		WithTvEntry(rkentry.RegisterTvEntry()),
-		WithPort(8083),
-		WithName("ut"))
-
-	entry.AddInterceptor(rkfibermetrics.Interceptor(
-		rkmidmetrics.WithEntryNameAndType("ut", "Echo")))
-
-	app := fiber.New()
-	app.Get("/ut/*", entry.TV)
-	entry.App = app
-
-	entry.Bootstrap(context.TODO())
-
-	req := httptest.NewRequest(http.MethodGet, "/ut/apis", nil)
-	resp, err := app.Test(req)
-	assert.Nil(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// for default
-	req = httptest.NewRequest(http.MethodGet, "/ut/other", nil)
-	resp, err = app.Test(req)
-	assert.Nil(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	entry.Interrupt(context.TODO())
-	time.Sleep(time.Second)
 }
 
 func generateCerts() ([]byte, []byte) {
