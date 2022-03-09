@@ -7,7 +7,7 @@ require (
 	github.com/gofiber/fiber/v2 v2.23.0
 	github.com/golang-jwt/jwt/v4 v4.3.0
 	github.com/prometheus/client_golang v1.12.1
-	github.com/rookie-ninja/rk-entry/v2 v2.0.3
+	github.com/rookie-ninja/rk-entry/v2 v2.0.4
 	github.com/rookie-ninja/rk-logger v1.2.10
 	github.com/rookie-ninja/rk-query v1.2.11
 	github.com/stretchr/testify v1.7.0
