@@ -45,6 +45,7 @@ import (
 	"go.uber.org/zap"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"path"
 	"strconv"
 	"strings"
@@ -78,7 +79,9 @@ type BootFiber struct {
 		CommonService rkentry.BootCommonService     `yaml:"commonService" json:"commonService"`
 		Prom          rkentry.BootProm              `yaml:"prom" json:"prom"`
 		Static        rkentry.BootStaticFileHandler `yaml:"static" json:"static"`
-		Middleware    struct {
+		PProf         rkentry.BootPProf             `yaml:"pprof" json:"pprof"`
+
+		Middleware struct {
 			Ignore    []string                `yaml:"ignore" json:"ignore"`
 			Logging   rkmidlog.BootConfig     `yaml:"logging" json:"logging"`
 			Prom      rkmidprom.BootConfig    `yaml:"prom" json:"prom"`
@@ -112,7 +115,9 @@ type FiberEntry struct {
 	PromEntry          *rkentry.PromEntry              `json:"-" yaml:"-"`
 	StaticFileEntry    *rkentry.StaticFileHandlerEntry `json:"-" yaml:"-"`
 	DocsEntry          *rkentry.DocsEntry              `json:"-" yaml:"-"`
-	bootstrapLogOnce   sync.Once                       `json:"-" yaml:"-"`
+	PProfEntry         *rkentry.PProfEntry             `json:"-" yaml:"-"`
+
+	bootstrapLogOnce sync.Once `json:"-" yaml:"-"`
 }
 
 // RegisterFiberEntryYAML register fiber entries with provided config file (Must YAML file).
@@ -179,6 +184,9 @@ func RegisterFiberEntryYAML(raw []byte) map[string]rkentry.Entry {
 
 		// Register static file handler
 		staticEntry := rkentry.RegisterStaticFileHandlerEntry(&element.Static, rkentry.WithNameStaticFileHandlerEntry(element.Name))
+
+		// Register pprof entry
+		pprofEntry := rkentry.RegisterPProfEntry(&element.PProf, rkentry.WithNamePProfEntry(element.Name))
 
 		inters := make([]fiber.Handler, 0)
 
@@ -269,6 +277,8 @@ func RegisterFiberEntryYAML(raw []byte) map[string]rkentry.Entry {
 			WithCommonServiceEntry(commonServiceEntry),
 			WithSwEntry(swEntry),
 			WithStaticFileHandlerEntry(staticEntry),
+			WithPProfEntry(pprofEntry),
+
 			WithMiddleware(inters...))
 
 		res[name] = entry
@@ -376,6 +386,24 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 		entry.DocsEntry.Bootstrap(ctx)
 	}
 
+	// Is pprof enabled?
+	if entry.IsPProfEnabled() {
+		entry.App.Get(path.Join(entry.PProfEntry.Path), adaptor.HTTPHandlerFunc(pprof.Index))
+
+		entry.App.Get(path.Join(entry.PProfEntry.Path, "cmdline"), adaptor.HTTPHandlerFunc(pprof.Cmdline))
+		entry.App.Get(path.Join(entry.PProfEntry.Path, "profile"), adaptor.HTTPHandlerFunc(pprof.Profile))
+		entry.App.Get(path.Join(entry.PProfEntry.Path, "symbol"), adaptor.HTTPHandlerFunc(pprof.Symbol))
+		entry.App.Get(path.Join(entry.PProfEntry.Path, "trace"), adaptor.HTTPHandlerFunc(pprof.Trace))
+		entry.App.Get(path.Join(entry.PProfEntry.Path, "allocs"), adaptor.HTTPHandlerFunc(pprof.Handler("allocs").ServeHTTP))
+		entry.App.Get(path.Join(entry.PProfEntry.Path, "block"), adaptor.HTTPHandlerFunc(pprof.Handler("block").ServeHTTP))
+		entry.App.Get(path.Join(entry.PProfEntry.Path, "goroutine"), adaptor.HTTPHandlerFunc(pprof.Handler("goroutine").ServeHTTP))
+		entry.App.Get(path.Join(entry.PProfEntry.Path, "heap"), adaptor.HTTPHandlerFunc(pprof.Handler("heap").ServeHTTP))
+		entry.App.Get(path.Join(entry.PProfEntry.Path, "mutex"), adaptor.HTTPHandlerFunc(pprof.Handler("mutex").ServeHTTP))
+		entry.App.Get(path.Join(entry.PProfEntry.Path, "threadcreate"), adaptor.HTTPHandlerFunc(pprof.Handler("threadcreate").ServeHTTP))
+
+		entry.PProfEntry.Bootstrap(ctx)
+	}
+
 	go entry.startServer(event, logger)
 
 	entry.bootstrapLogOnce.Do(func() {
@@ -405,6 +433,9 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 			}
 
 			entry.LoggerEntry.Info(fmt.Sprintf("CommonSreviceEntry: %s", strings.Join(handlers, ", ")))
+		}
+		if entry.IsPProfEnabled() {
+			entry.LoggerEntry.Info(fmt.Sprintf("PProfEntry: %s://localhost:%d%s", scheme, entry.Port, entry.PProfEntry.Path))
 		}
 		entry.EventEntry.Finish(event)
 	})
@@ -468,6 +499,10 @@ func (entry *FiberEntry) Interrupt(ctx context.Context) {
 		entry.DocsEntry.Interrupt(ctx)
 	}
 
+	if entry.IsPProfEnabled() {
+		entry.PProfEntry.Interrupt(ctx)
+	}
+
 	if entry.App != nil {
 		if err := entry.App.Shutdown(); err != nil && err != http.ErrServerClosed {
 			event.AddErr(err)
@@ -513,6 +548,7 @@ func (entry *FiberEntry) MarshalJSON() ([]byte, error) {
 		"commonServiceEntry":     entry.CommonServiceEntry,
 		"promEntry":              entry.PromEntry,
 		"staticFileHandlerEntry": entry.StaticFileEntry,
+		"pprofEntry":             entry.PProfEntry,
 	}
 
 	if entry.CertEntry != nil {
@@ -569,6 +605,11 @@ func (entry *FiberEntry) IsCommonServiceEnabled() bool {
 // IsDocsEnabled Is TV entry enabled?
 func (entry *FiberEntry) IsDocsEnabled() bool {
 	return entry.DocsEntry != nil
+}
+
+// IsPProfEnabled Is pprof entry enabled?
+func (entry *FiberEntry) IsPProfEnabled() bool {
+	return entry.PProfEntry != nil
 }
 
 // IsPromEnabled Is prometheus entry enabled?
@@ -631,6 +672,13 @@ func (entry *FiberEntry) logBasicInfo(operation string, ctx context.Context) (rk
 		event.AddPayloads(
 			zap.Bool("docsEnabled", true),
 			zap.String("docsPath", entry.DocsEntry.Path))
+	}
+
+	// add pprofEntry info
+	if entry.IsPProfEnabled() {
+		event.AddPayloads(
+			zap.Bool("pprofEnabled", true),
+			zap.String("pprofPath", entry.PProfEntry.Path))
 	}
 
 	// add PromEntry info
@@ -710,6 +758,13 @@ func WithCertEntry(certEntry *rkentry.CertEntry) FiberEntryOption {
 func WithSwEntry(sw *rkentry.SWEntry) FiberEntryOption {
 	return func(entry *FiberEntry) {
 		entry.SwEntry = sw
+	}
+}
+
+// WithPProfEntry provide rkentry.PProfEntry.
+func WithPProfEntry(p *rkentry.PProfEntry) FiberEntryOption {
+	return func(entry *FiberEntry) {
+		entry.PProfEntry = p
 	}
 }
 
