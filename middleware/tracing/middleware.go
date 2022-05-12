@@ -21,11 +21,6 @@ func Middleware(opts ...rkmidtrace.Option) fiber.Handler {
 	set := rkmidtrace.NewOptionSet(opts...)
 
 	return func(ctx *fiber.Ctx) error {
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, set.GetEntryName()))
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.TracerKey, set.GetTracer()))
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.TracerProviderKey, set.GetProvider()))
-		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.PropagatorKey, set.GetPropagator()))
-
 		req := &http.Request{}
 		fasthttpadaptor.ConvertRequest(ctx.Context(), req, true)
 
@@ -33,6 +28,10 @@ func Middleware(opts ...rkmidtrace.Option) fiber.Handler {
 		set.Before(beforeCtx)
 
 		ctx.SetUserContext(beforeCtx.Output.NewCtx)
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, set.GetEntryName()))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.TracerKey, set.GetTracer()))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.TracerProviderKey, set.GetProvider()))
+		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.PropagatorKey, set.GetPropagator()))
 
 		// add to context
 		if beforeCtx.Output.Span != nil {
