@@ -37,7 +37,7 @@ func Middleware(opts ...rkmidauth.Option) fiber.Handler {
 			for k, v := range beforeCtx.Output.HeadersToReturn {
 				ctx.Response().Header.Set(k, v)
 			}
-			ctx.Response().SetStatusCode(beforeCtx.Output.ErrResp.Err.Code)
+			ctx.Response().SetStatusCode(beforeCtx.Output.ErrResp.Code())
 			ctx.JSON(beforeCtx.Output.ErrResp)
 		}
 

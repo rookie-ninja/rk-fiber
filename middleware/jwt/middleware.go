@@ -33,7 +33,7 @@ func Middleware(opts ...rkmidjwt.Option) fiber.Handler {
 
 		// case 1: error response
 		if beforeCtx.Output.ErrResp != nil {
-			ctx.Response().SetStatusCode(beforeCtx.Output.ErrResp.Err.Code)
+			ctx.Response().SetStatusCode(beforeCtx.Output.ErrResp.Code())
 			return ctx.JSON(beforeCtx.Output.ErrResp)
 		}
 

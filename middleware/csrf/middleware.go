@@ -32,7 +32,7 @@ func Middleware(opts ...rkmidcsrf.Option) fiber.Handler {
 		set.Before(beforeCtx)
 
 		if beforeCtx.Output.ErrResp != nil {
-			ctx.Response().SetStatusCode(beforeCtx.Output.ErrResp.Err.Code)
+			ctx.Response().SetStatusCode(beforeCtx.Output.ErrResp.Code())
 			return ctx.JSON(beforeCtx.Output.ErrResp)
 		}
 

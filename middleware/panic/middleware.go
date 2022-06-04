@@ -22,8 +22,8 @@ func Middleware(opts ...rkmidpanic.Option) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.EntryNameKey, set.GetEntryName()))
 
-		handlerFunc := func(resp *rkerror.ErrorResp) {
-			ctx.Response().SetStatusCode(resp.Err.Code)
+		handlerFunc := func(resp rkerror.ErrorInterface) {
+			ctx.Response().SetStatusCode(resp.Code())
 			ctx.JSON(resp)
 		}
 		beforeCtx := set.BeforeCtx(rkfiberctx.GetEvent(ctx), rkfiberctx.GetLogger(ctx), handlerFunc)

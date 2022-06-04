@@ -42,7 +42,8 @@ var boot []byte
 // @description This is a greeter service with rk-boot.
 func main() {
 	// Bootstrap preload entries
-	rkentry.BootstrapPreloadEntryYAML(boot)
+	rkentry.BootstrapBuiltInEntryFromYAML(boot)
+	rkentry.BootstrapPluginEntryFromYAML(boot)
 
 	// Bootstrap gin entry from boot config
 	res := rkfiber.RegisterFiberEntryYAML(boot)

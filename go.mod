@@ -3,17 +3,17 @@ module github.com/rookie-ninja/rk-fiber
 go 1.17
 
 require (
-	github.com/gofiber/adaptor/v2 v2.1.15
-	github.com/gofiber/fiber/v2 v2.29.0
+	github.com/gofiber/adaptor/v2 v2.1.24
+	github.com/gofiber/fiber/v2 v2.34.0
 	github.com/golang-jwt/jwt/v4 v4.3.0
-	github.com/prometheus/client_golang v1.12.1
-	github.com/rookie-ninja/rk-entry/v2 v2.1.5
+	github.com/prometheus/client_golang v1.12.2
+	github.com/rookie-ninja/rk-entry/v2 v2.2.1
 	github.com/rookie-ninja/rk-logger v1.2.11
 	github.com/rookie-ninja/rk-query v1.2.14
-	github.com/stretchr/testify v1.7.0
-	github.com/valyala/fasthttp v1.34.0
-	go.opentelemetry.io/otel v1.5.0
-	go.opentelemetry.io/otel/trace v1.5.0
+	github.com/stretchr/testify v1.7.1
+	github.com/valyala/fasthttp v1.37.0
+	go.opentelemetry.io/otel v1.7.0
+	go.opentelemetry.io/otel/trace v1.7.0
 	go.uber.org/zap v1.21.0
 )
 
@@ -24,7 +24,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
-	github.com/go-logr/logr v1.2.2 // indirect
+	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gofiber/utils v0.1.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect

@@ -56,7 +56,7 @@ type timeoutCtx struct {
 
 func timeoutHandler(ctx *timeoutCtx) func() {
 	return func() {
-		ctx.fiberCtx.Response().SetStatusCode(ctx.before.Output.TimeoutErrResp.Err.Code)
+		ctx.fiberCtx.Response().SetStatusCode(ctx.before.Output.TimeoutErrResp.Code())
 		ctx.fiberCtx.JSON(ctx.before.Output.TimeoutErrResp)
 	}
 }
