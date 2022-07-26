@@ -31,7 +31,7 @@ import (
 	"github.com/rookie-ninja/rk-entry/v2/middleware/timeout"
 	"github.com/rookie-ninja/rk-entry/v2/middleware/tracing"
 	"github.com/rookie-ninja/rk-fiber/middleware/auth"
-	"github.com/rookie-ninja/rk-fiber/middleware/cors"
+	rkfibercors "github.com/rookie-ninja/rk-fiber/middleware/cors"
 	"github.com/rookie-ninja/rk-fiber/middleware/csrf"
 	"github.com/rookie-ninja/rk-fiber/middleware/jwt"
 	"github.com/rookie-ninja/rk-fiber/middleware/log"
@@ -227,6 +227,12 @@ func RegisterFiberEntryYAML(raw []byte) map[string]rkentry.Entry {
 				rkmidtrace.ToOptions(&element.Middleware.Trace, element.Name, FiberEntryType)...))
 		}
 
+		// cors middleware
+		if element.Middleware.Cors.Enabled {
+			inters = append(inters, rkfibercors.Middleware(
+				rkmidcors.ToOptions(&element.Middleware.Cors, element.Name, FiberEntryType)...))
+		}
+
 		// jwt middleware
 		if element.Middleware.Jwt.Enabled {
 			inters = append(inters, rkfiberjwt.Middleware(
@@ -243,12 +249,6 @@ func RegisterFiberEntryYAML(raw []byte) map[string]rkentry.Entry {
 		if element.Middleware.Csrf.Enabled {
 			inters = append(inters, rkfibercsrf.Middleware(
 				rkmidcsrf.ToOptions(&element.Middleware.Csrf, element.Name, FiberEntryType)...))
-		}
-
-		// cors middleware
-		if element.Middleware.Cors.Enabled {
-			inters = append(inters, rkfibercors.Middleware(
-				rkmidcors.ToOptions(&element.Middleware.Cors, element.Name, FiberEntryType)...))
 		}
 
 		// meta middleware
