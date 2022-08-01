@@ -29,9 +29,11 @@ func TestMiddleware_WithoutOptions(t *testing.T) {
 
 func TestMiddleware_WithLeakyBucket(t *testing.T) {
 	app := fiber.New()
+	reqPerSec := 1
+
 	app.Use(Middleware(
 		rkmidlimit.WithAlgorithm(rkmidlimit.LeakyBucket),
-		rkmidlimit.WithReqPerSec(1),
+		rkmidlimit.WithReqPerSec(&reqPerSec),
 		rkmidlimit.WithReqPerSecByPath("ut-path", 1)))
 	app.Get("/ut-path", func(*fiber.Ctx) error {
 		return nil
