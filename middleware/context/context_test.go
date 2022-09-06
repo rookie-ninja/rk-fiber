@@ -32,6 +32,11 @@ func newCtx() (*fiber.Ctx, *fasthttp.RequestCtx) {
 	return ctx, reqCtx
 }
 
+func TestGormCtx(t *testing.T) {
+	ctx, _ := newCtx()
+	assert.NotNil(t, GormCtx(ctx))
+}
+
 func TestGetIncomingHeaders(t *testing.T) {
 	ctx, reqCtx := newCtx()
 	reqCtx.Request.Header.Set("ut-key", "ut-value")
