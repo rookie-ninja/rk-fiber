@@ -47,7 +47,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -124,7 +124,7 @@ type FiberEntry struct {
 
 // RegisterFiberEntryYAML register fiber entries with provided config file (Must YAML file).
 //
-// Currently, support two ways to provide config file path.
+// Currently, support two ways to provide config file filepath.
 // 1: With function parameters
 // 2: With command line flag "--rkboot" described in rkentry.BootConfigPathFlagKey (Will override function parameter if exists)
 // Command line flag has high priority which would override function parameter
@@ -362,7 +362,7 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 
 	// Is swagger enabled?
 	if entry.IsSwEnabled() {
-		entry.App.Get(path.Join(entry.SwEntry.Path, "*"), adaptor.HTTPHandler(entry.SwEntry.ConfigFileHandler()))
+		entry.App.Get(filepath.Join(entry.SwEntry.Path, "*"), adaptor.HTTPHandler(entry.SwEntry.ConfigFileHandler()))
 		entry.SwEntry.Bootstrap(ctx)
 	}
 
@@ -374,7 +374,7 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 		})
 
 		// Register path into Router.
-		entry.App.Get(path.Join(entry.StaticFileEntry.Path, "*"), adaptor.HTTPHandler(entry.StaticFileEntry.GetFileHandler()))
+		entry.App.Get(filepath.Join(entry.StaticFileEntry.Path, "*"), adaptor.HTTPHandler(entry.StaticFileEntry.GetFileHandler()))
 
 		// Bootstrap entry.
 		entry.StaticFileEntry.Bootstrap(ctx)
@@ -392,24 +392,24 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 	// Is Docs enabled?
 	if entry.IsDocsEnabled() {
 		// Bootstrap TV entry.
-		entry.App.Get(path.Join(entry.DocsEntry.Path, "*"), adaptor.HTTPHandlerFunc(entry.DocsEntry.ConfigFileHandler()))
+		entry.App.Get(filepath.Join(entry.DocsEntry.Path, "*"), adaptor.HTTPHandlerFunc(entry.DocsEntry.ConfigFileHandler()))
 		entry.DocsEntry.Bootstrap(ctx)
 	}
 
 	// Is pprof enabled?
 	if entry.IsPProfEnabled() {
-		entry.App.Get(path.Join(entry.PProfEntry.Path), adaptor.HTTPHandlerFunc(pprof.Index))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path), adaptor.HTTPHandlerFunc(pprof.Index))
 
-		entry.App.Get(path.Join(entry.PProfEntry.Path, "cmdline"), adaptor.HTTPHandlerFunc(pprof.Cmdline))
-		entry.App.Get(path.Join(entry.PProfEntry.Path, "profile"), adaptor.HTTPHandlerFunc(pprof.Profile))
-		entry.App.Get(path.Join(entry.PProfEntry.Path, "symbol"), adaptor.HTTPHandlerFunc(pprof.Symbol))
-		entry.App.Get(path.Join(entry.PProfEntry.Path, "trace"), adaptor.HTTPHandlerFunc(pprof.Trace))
-		entry.App.Get(path.Join(entry.PProfEntry.Path, "allocs"), adaptor.HTTPHandlerFunc(pprof.Handler("allocs").ServeHTTP))
-		entry.App.Get(path.Join(entry.PProfEntry.Path, "block"), adaptor.HTTPHandlerFunc(pprof.Handler("block").ServeHTTP))
-		entry.App.Get(path.Join(entry.PProfEntry.Path, "goroutine"), adaptor.HTTPHandlerFunc(pprof.Handler("goroutine").ServeHTTP))
-		entry.App.Get(path.Join(entry.PProfEntry.Path, "heap"), adaptor.HTTPHandlerFunc(pprof.Handler("heap").ServeHTTP))
-		entry.App.Get(path.Join(entry.PProfEntry.Path, "mutex"), adaptor.HTTPHandlerFunc(pprof.Handler("mutex").ServeHTTP))
-		entry.App.Get(path.Join(entry.PProfEntry.Path, "threadcreate"), adaptor.HTTPHandlerFunc(pprof.Handler("threadcreate").ServeHTTP))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path, "cmdline"), adaptor.HTTPHandlerFunc(pprof.Cmdline))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path, "profile"), adaptor.HTTPHandlerFunc(pprof.Profile))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path, "symbol"), adaptor.HTTPHandlerFunc(pprof.Symbol))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path, "trace"), adaptor.HTTPHandlerFunc(pprof.Trace))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path, "allocs"), adaptor.HTTPHandlerFunc(pprof.Handler("allocs").ServeHTTP))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path, "block"), adaptor.HTTPHandlerFunc(pprof.Handler("block").ServeHTTP))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path, "goroutine"), adaptor.HTTPHandlerFunc(pprof.Handler("goroutine").ServeHTTP))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path, "heap"), adaptor.HTTPHandlerFunc(pprof.Handler("heap").ServeHTTP))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path, "mutex"), adaptor.HTTPHandlerFunc(pprof.Handler("mutex").ServeHTTP))
+		entry.App.Get(filepath.Join(entry.PProfEntry.Path, "threadcreate"), adaptor.HTTPHandlerFunc(pprof.Handler("threadcreate").ServeHTTP))
 
 		entry.PProfEntry.Bootstrap(ctx)
 	}
