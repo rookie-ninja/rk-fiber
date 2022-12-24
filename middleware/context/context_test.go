@@ -9,6 +9,7 @@ import (
 	"context"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
+	rkcursor "github.com/rookie-ninja/rk-entry/v2/cursor"
 	rkmid "github.com/rookie-ninja/rk-entry/v2/middleware"
 	"github.com/rookie-ninja/rk-logger"
 	"github.com/rookie-ninja/rk-query"
@@ -274,6 +275,35 @@ func TestGetCsrfToken(t *testing.T) {
 	// happy case
 	ctx.SetUserContext(context.WithValue(ctx.UserContext(), rkmid.CsrfTokenKey, "csrf-token"))
 	assert.NotEmpty(t, GetCsrfToken(ctx))
+}
+
+func TestSetPointerCreator(t *testing.T) {
+	assert.Nil(t, pointerCreator)
+
+	SetPointerCreator(createFakePointer)
+
+	assert.NotNil(t, pointerCreator)
+}
+
+func createFakePointer(p *rkcursor.CursorPayload) rkcursor.Pointer {
+	return &fakePointer{}
+}
+
+type fakePointer struct{}
+
+func (f fakePointer) PrintError(err error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (f fakePointer) ObserveError(err error) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (f fakePointer) Release() {
+	//TODO implement me
+	panic("implement me")
 }
 
 func assertNotPanic(t *testing.T) {
