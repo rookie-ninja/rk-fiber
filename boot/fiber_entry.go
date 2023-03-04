@@ -442,7 +442,7 @@ func (entry *FiberEntry) Bootstrap(ctx context.Context) {
 				fmt.Sprintf("%s://localhost:%d%s", scheme, entry.Port, entry.CommonServiceEntry.InfoPath),
 			}
 
-			entry.LoggerEntry.Info(fmt.Sprintf("CommonSreviceEntry: %s", strings.Join(handlers, ", ")))
+			entry.LoggerEntry.Info(fmt.Sprintf("CommonServiceEntry: %s", strings.Join(handlers, ", ")))
 		}
 		if entry.IsPProfEnabled() {
 			entry.LoggerEntry.Info(fmt.Sprintf("PProfEntry: %s://localhost:%d%s", scheme, entry.Port, entry.PProfEntry.Path))
