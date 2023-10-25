@@ -377,7 +377,7 @@ User can start multiple [gofiber/fiber](https://github.com/gofiber/fiber) instan
 |-------------------|--------------------------------------------------------------------|----------|---------------|
 | fiber.sw.enabled  | Optional, Enable swagger service over gin server                   | boolean  | false         |
 | fiber.sw.path     | Optional, The path access swagger service from web                 | string   | /sw           |
-| fiber.sw.jsonPath | Optional, Where the swagger.json files are stored locally          | string   | ""            |
+| fiber.sw.jsonPath | Optional, Where the swagger.json files are stored locally          | []string | [""]          |
 | fiber.sw.headers  | Optional, Headers would be sent to caller as scheme of [key:value] | []string | []            |
 
 ### Docs (RapiDoc)
@@ -385,7 +385,7 @@ User can start multiple [gofiber/fiber](https://github.com/gofiber/fiber) instan
 |------------------------|----------------------------------------------------------------------------------------|----------|---------------|
 | fiber.docs.enabled     | Optional, Enable RapiDoc service over gin server                                       | boolean  | false         |
 | fiber.docs.path        | Optional, The path access docs service from web                                        | string   | /docs         |
-| fiber.docs.jsonPath    | Optional, Where the swagger.json or open API files are stored locally                  | string   | ""            |
+| fiber.docs.jsonPath    | Optional, Where the swagger.json or open API files are stored locally                  | []string | [""]          |
 | fiber.docs.headers     | Optional, Headers would be sent to caller as scheme of [key:value]                     | []string | []            |
 | fiber.docs.style.theme | Optional, light and dark are supported options                                         | string   | []            |
 | fiber.docs.debug       | Optional, Enable debugging mode in RapiDoc which can be used as the same as Swagger UI | boolean  | false         |
@@ -726,7 +726,7 @@ fiber:
 #    sw:
 #      enabled: true                                       # Optional, default: false
 #      path: "sw"                                          # Optional, default: "sw"
-#      jsonPath: ""                                        # Optional
+#      jsonPath: [""]                                      # Optional
 #      headers: ["sw:rk"]                                  # Optional, default: []
 #    docs:
 #      enabled: true                                       # Optional, default: false
